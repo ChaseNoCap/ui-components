@@ -1,0 +1,159 @@
+
+You are analyzing git changes for the metaGOTHIC framework to generate intelligent commit messages.
+
+## PROJECT CONTEXT
+The metaGOTHIC framework is an AI-guided development platform that provides:
+- Health monitoring dashboards
+- CI/CD pipeline control
+- Real-time git integration with Claude Code
+- Repository management tools
+
+## CURRENT BACKLOG (for context about ongoing work):
+# Meta GOTHIC Framework Backlog
+
+This document tracks future work items for the Meta GOTHIC Framework. When asking "what's next?", consult this backlog for prioritized work items.
+
+## Current Status
+
+**As of May 29, 2025 (Morning):**
+- Meta GOTHIC Framework: 8 packages created, UI dashboard FULLY OPERATIONAL with live GitHub API integration
+- Real-time GitHub data integration: repositories, workflows, metrics, and health status
+- Production dashboard running at http://localhost:3001 with real data from ChaseNoCap repositories
+- **✅ NEW: Repository Tools Complete** - Real-time git status detection and Claude Code integration
+- **✅ NEW: AI-Powered Commit Messages** - Full Claude Code subprocess integration for intelligent commit analysis
+- **✅ NEW: Dual-Server Architecture** - Git server (port 3003) + React dashboard (port 3001)
+- Comprehensive error handling with user-friendly setup guidance and retry mechanisms
+- Browser-compatible architecture with resolved Node.js dependency issues
+
+## How to Use This Backlog
+
+1. **Prioritization**: Items are listed in priority order within each section
+2. **Status**: Each item should have a clear status (Not Started, In Progress, Blocked, Complete)
+3. **Refinement**: Work items should be refined before starting implementation
+4. **Updates**: Mark items complete and add new discoveries as work progresses
+
+## 🚨 Critical Priority Items
+
+> **SPRINT COMPLETE** ✅: Meta GOTHIC Repository Tools successfully implemented!  
+> **NEXT SPRINT**: Real-time Event System Integration for live dashboard updates and workflow monitoring.
+
+### 1. ✅ Meta GOTHIC Repository Tools (COMPLETE)
+**Status**: ✅ COMPLETE - Fully operational with real integrations  
+**Started**: May 28, 2025  
+**Completed**: May 29, 2025  
+**Priority**: COMPLETE - Sprint successful  
+**Description**: Full repository management tools with real-time git status and AI-powered commit message generation
+
+**✅ Completed Features**:
+- ✅ **Tools Navigation**: Route exists at /tools with navigation link
+- ✅ **UI Components**: UncommittedChangesAnalyzer, CommitMessageGenerator components fully operational
+- ✅ **Real Git Integration**: Live git status detection via backend API with real `git status --porcelain`
+- ✅ **Claude Code Integration**: AI-powered commit message generation using real Claude Code subprocess
+- ✅ **Backend API Server**: Complete git-server.js with git and Claude endpoints
+- ✅ **Real-time Data**: No mock/static data - all operations use live repository state
+- ✅ **Comprehensive Context**: Claude analyzes actual file diffs, backlog, and project context
+- ✅ **Multi-package Support**: Organizes changes by package with proper path handling
+- ✅ **Error Handling**: Robust fallback logic and user-friendly error states
+- ✅ **Documentation**: README updated with prominent dual-server startup instructions
+
+**✅ Technical Implementation**:
+- ✅ **Git Status API**: `/api/git/status` endpoint executes real git commands
+- ✅ **Claude Code API**: `/api/claude/generate-commit-messages` spawns Claude subprocess
+
+
+## FILE CHANGES TO ANALYZE:
+
+=== Package: meta-gothic-framework ===
+
+File: docs/backlog.md (Modified)
+Recent changes:
+diff --git a/meta-gothic-framework/docs/backlog.md b/meta-gothic-framework/docs/backlog.md
+index ac1bac9..4008da0 100644
+--- a/meta-gothic-framework/docs/backlog.md
++++ b/meta-gothic-framework/docs/backlog.md
+@@ -4,10 +4,13 @@ This document tracks future work items for the Meta GOTHIC Framework. When askin
+ 
+ ## Current Status
+ 
+-**As of May 28, 2025 (Evening):**
++**As of May 29, 2025 (Morning):**
+ - Meta GOTHIC Framework: 8 packages created, UI dashboard FULLY OPERATIONAL with live GitHub API integration
+ - Real-time GitHub data integration: repositories, workflows, metrics, and health status
+ - Production dashboard running at http://localhost:3001 with real data from ChaseNoCap repositories
++- **✅ NEW: Repository Tools Complete** - Real-time git status detection and Claude Code integration
++- **✅ NEW: AI-Powered Commit Messages** - Full Claude Code subprocess integration for intelligent commit analysis
++- **✅ NEW: Dual-Server Architecture** - Git server (port 3003) + React dashboard (port 3001)
+ - Comprehensive error handling with user-friendly setup guidance and retry mechanisms
+ - Browser-compatible architecture with resolved Node.js dependency issues
+ 
+@@ -20,42 +23,58 @@ This document tracks future work items for the Meta GOTHIC Framework. When askin
+
+
+=== Package: ui-components ===
+
+File: src/pages/Tools.tsx (Modified)
+Recent changes:
+diff --git a/meta-gothic-framework/packages/ui-components/src/pages/Tools.tsx b/meta-gothic-framework/packages/ui-components/src/pages/Tools.tsx
+index 35b0d34..ee92c04 100644
+--- a/meta-gothic-framework/packages/ui-components/src/pages/Tools.tsx
++++ b/meta-gothic-framework/packages/ui-components/src/pages/Tools.tsx
+@@ -1,104 +1,183 @@
+ import React, { useState } from 'react';
+-import { GitCommit, GitPullRequest, Tag, RefreshCw, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react';
++import { GitCommit, Tag, RefreshCw, AlertCircle, CheckCircle, ChevronDown, ExternalLink, Activity, Clock } from 'lucide-react';
+ import { useTheme } from '../context/ThemeContext';
+-import { UncommittedChangesAnalyzer } from '../components/Tools/UncommittedChangesAnalyzer';
+-import { CommitMessageGenerator } from '../components/Tools/CommitMessageGenerator';
+ import { toolsService, type PackageChanges, type CommitMessage } from '../services/toolsService';
+ 
+-interface ToolCard {
++interface Tool {
+   id: string;
+   title: string;
+   description: string;
+   icon: React.ReactNode;
++  isReady: boolean;
+
+
+
+## CHANGE SUMMARY:
+
+Package: meta-gothic-framework (.)
+Files: M docs/backlog.md
+
+
+Package: ui-components (packages/ui-components)
+Files: M src/pages/Tools.tsx
+
+
+## TASK:
+Generate thoughtful commit messages by:
+
+1. **Analyzing the actual code changes** - understand what functionality was added/modified/removed
+2. **Considering the project backlog** - see if changes relate to planned work items
+3. **Understanding the package purpose** - each package has a specific role in metaGOTHIC
+4. **Focusing on user impact** - what does this change enable or improve?
+
+## OUTPUT REQUIREMENTS:
+Return a JSON array with objects containing {package, message, description}
+
+- **message**: Concise conventional commit (feat:, fix:, refactor:, docs:, etc.)
+- **description**: 1-2 sentences explaining the business value and technical change
+
+## GUIDELINES:
+- Use conventional commits format (feat:, fix:, refactor:, docs:, chore:, etc.)
+- Focus on WHY and WHAT the change accomplishes, not just WHICH files changed
+- Reference backlog items if changes relate to planned work
+- Be specific about the functionality added/improved
+- Keep messages concise but informative
+- Consider the metaGOTHIC framework context
+
+Example good commit:
+{
+  "package": "ui-components", 
+  "message": "feat: implement real-time git status detection with Claude integration",
+  "description": "Replaces mock data with live git status API and adds Claude Code subprocess for intelligent commit message generation, enabling real-time repository management in the Tools page."
+}
+
+Analyze the changes and generate appropriate commit messages:
+

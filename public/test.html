@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <h1>metaGOTHIC Dashboard - Connection Test</h1>
+    
+    <div class="status success">
+        ✅ Static HTML is working
+    </div>
+    
+    <div class="status info">
+        📡 Vite dev server is serving files on port 5173
+    </div>
+    
+    <div class="status info">
+        🔗 Try these URLs:
+        <ul>
+            <li><a href="/">Main React App</a></li>
+            <li><a href="/test.html">This test page</a></li>
+        </ul>
+    </div>
+    
+    <script>
+        console.log('✅ JavaScript is working');
+        console.log('🌐 Location:', window.location.href);
+        console.log('📍 Port:', window.location.port);
+    </script>
+</body>
+</html>

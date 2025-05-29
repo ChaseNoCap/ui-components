@@ -1,0 +1,71 @@
+{
+  "name": "@chasenocap/ui-components",
+  "version": "0.1.0",
+  "description": "metaGOTHIC UI Components - Health monitoring and CI/CD control dashboard",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "vite",
+    "dev:full": "concurrently \"npm run dev\" \"npm run git-server\"",
+    "git-server": "node scripts/git-server.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext ts,tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chasenocap/cache": "file:../../../../packages/cache",
+    "@chasenocap/github-graphql-client": "file:../../../../packages/github-graphql-client",
+    "@chasenocap/logger": "file:../../../../packages/logger",
+    "@tanstack/react-query": "^5.17.19",
+    "clsx": "^2.1.0",
+    "date-fns": "^3.3.1",
+    "lucide-react": "^0.316.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.21.3",
+    "recharts": "^2.10.4"
+  },
+  "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.77.2",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@typescript-eslint/eslint-plugin": "^6.19.1",
+    "@typescript-eslint/parser": "^6.19.1",
+    "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^1.6.1",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^8.2.2",
+    "cors": "^2.8.5",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "express": "^4.21.2",
+    "jsdom": "^26.1.0",
+    "postcss": "^8.4.33",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vitest": "^1.2.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChaseNoCap/ui-components.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CLAUDE.md"
+  ],
+  "author": "ChaseNoCap",
+  "license": "MIT"
+}
