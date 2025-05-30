@@ -1,7 +1,7 @@
 # UI Components CLAUDE.md
 
 ## Overview
-Production-ready React dashboard for the metaGOTHIC framework with **fully operational live GitHub API integration** at http://localhost:3001. Features 100% real data from GitHub repositories, resolved browser compatibility issues, and comprehensive error handling. No mock fallbacks in production.
+Production-ready React dashboard for the metaGOTHIC framework with **fully operational live GitHub API integration** at http://localhost:3001. Features 100% real data from GitHub repositories, enhanced loading experience, comprehensive error handling, and support for both personal and organization GitHub accounts. **No mock data** - all data comes from live GitHub API.
 
 ## Production Status ✅
 - **Live GitHub API Integration**: 100% real data - no mock fallbacks in production

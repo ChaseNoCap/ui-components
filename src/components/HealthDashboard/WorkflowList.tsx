@@ -9,10 +9,21 @@ interface WorkflowListProps {
 }
 
 export const WorkflowList: React.FC<WorkflowListProps> = ({ metrics }) => {
-  // Flatten all workflows from all repositories
-  const allWorkflows = metrics.flatMap(m => 
-    m.workflows.map(w => ({ ...w, repository: m.repository }))
-  );
+  // Handle undefined or null metrics
+  if (!metrics || !Array.isArray(metrics)) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 text-center">
+        <p className="text-gray-500 dark:text-gray-400">No metrics available</p>
+      </div>
+    );
+  }
+
+  // Flatten all workflows from all repositories with defensive checks
+  const allWorkflows = metrics
+    .filter(m => m && m.workflows && Array.isArray(m.workflows))
+    .flatMap(m => 
+      m.workflows.map(w => ({ ...w, repository: m.repository }))
+    );
 
   // Sort by most recent with safe date parsing
   const sortedWorkflows = allWorkflows.sort((a, b) => {

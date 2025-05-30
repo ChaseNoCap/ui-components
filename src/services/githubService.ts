@@ -59,11 +59,22 @@ class GitHubService {
             return result.data;
           } else {
             // REST API request
-            const url = queryOrUrl.startsWith('GET ') || queryOrUrl.startsWith('POST ') 
-              ? `https://api.github.com${queryOrUrl.substring(4)}`
-              : queryOrUrl;
+            let url: string;
+            let method: string;
             
-            const method = queryOrUrl.startsWith('POST ') ? 'POST' : 'GET';
+            if (queryOrUrl.startsWith('GET ')) {
+              method = 'GET';
+              url = `https://api.github.com${queryOrUrl.substring(4).trim()}`;
+            } else if (queryOrUrl.startsWith('POST ')) {
+              method = 'POST';
+              url = `https://api.github.com${queryOrUrl.substring(5).trim()}`;
+            } else {
+              // Assume it's already a full URL or path
+              method = 'GET';
+              url = queryOrUrl.startsWith('http') ? queryOrUrl : `https://api.github.com${queryOrUrl}`;
+            }
+            
+            this.logger.debug(`Making ${method} request to: ${url}`);
             
             const response = await fetch(url, {
               method,
@@ -77,7 +88,7 @@ class GitHubService {
             });
             
             if (!response.ok) {
-              throw new Error(`REST API request failed: ${response.status}`);
+              throw new Error(`REST API request failed: ${response.status} - ${response.statusText}`);
             }
             
             return await response.json();
@@ -104,14 +115,15 @@ class GitHubService {
   }
 
   /**
-   * Fetch repositories for the metaGOTHIC organization
+   * Fetch repositories for the metaGOTHIC user/organization
    */
   async fetchRepositories(): Promise<Repository[]> {
     return this.withCaching('repositories', 300, () => // Cache for 5 minutes
       this.withErrorHandling('fetchRepositories', async () => {
-      const query = `
-        query GetMetaGOTHICRepositories($org: String!) {
-          organization(login: $org) {
+      // First, try as a user account
+      const userQuery = `
+        query GetUserRepositories($login: String!) {
+          user(login: $login) {
             repositories(first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
               nodes {
                 id
@@ -150,15 +162,71 @@ class GitHubService {
         }
       `;
 
-      const response = await this.client.request(query, { org: 'ChaseNoCap' });
-      
-      if (!response?.organization?.repositories?.nodes) {
-        throw new Error('Invalid response structure from GitHub API');
+      try {
+        const response = await this.client.request(userQuery, { login: 'ChaseNoCap' });
+        
+        if (response?.user?.repositories?.nodes) {
+          this.logger.info('Successfully fetched repositories from user account');
+          return response.user.repositories.nodes
+            .filter((repo: any) => repo.name.includes('gothic') || this.isMetaGOTHICPackage(repo.name))
+            .map((repo: any) => this.transformRepository(repo));
+        }
+      } catch (userError) {
+        this.logger.warn('Failed to fetch as user, trying as organization:', userError);
+        
+        // If user query fails, try as organization
+        const orgQuery = `
+          query GetOrgRepositories($org: String!) {
+            organization(login: $org) {
+              repositories(first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                nodes {
+                  id
+                  name
+                  nameWithOwner
+                  description
+                  url
+                  isArchived
+                  defaultBranchRef {
+                    target {
+                      ... on Commit {
+                        oid
+                        message
+                        author {
+                          name
+                          email
+                          date
+                        }
+                      }
+                    }
+                  }
+                  packageJson: object(expression: "HEAD:package.json") {
+                    ... on Blob {
+                      text
+                    }
+                  }
+                  releases(first: 1, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes {
+                      tagName
+                      publishedAt
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `;
+
+        const orgResponse = await this.client.request(orgQuery, { org: 'ChaseNoCap' });
+        
+        if (orgResponse?.organization?.repositories?.nodes) {
+          this.logger.info('Successfully fetched repositories from organization');
+          return orgResponse.organization.repositories.nodes
+            .filter((repo: any) => repo.name.includes('gothic') || this.isMetaGOTHICPackage(repo.name))
+            .map((repo: any) => this.transformRepository(repo));
+        }
       }
       
-      return response.organization.repositories.nodes
-        .filter((repo: any) => repo.name.includes('gothic') || this.isMetaGOTHICPackage(repo.name))
-        .map((repo: any) => this.transformRepository(repo));
+      throw new Error('Could not fetch repositories from either user or organization account');
       })
     );
   }
@@ -201,9 +269,12 @@ class GitHubService {
       `;
 
       // For now, use REST API for workflow runs as it's more straightforward
-      const workflowRuns = await this.client.request(`
-        GET /repos/${owner}/${repo}/actions/runs
-      `);
+      const workflowRuns = await this.client.request(`GET /repos/${owner}/${repo}/actions/runs`);
+
+      if (!workflowRuns || !workflowRuns.workflow_runs) {
+        this.logger.warn(`No workflow runs found for ${owner}/${repo}`);
+        return [];
+      }
 
       return workflowRuns.workflow_runs.slice(0, 10).map((run: any) => ({
         id: run.id,
@@ -218,6 +289,11 @@ class GitHubService {
         repository: repo,
       }));
     } catch (error) {
+      // Some repositories might not have GitHub Actions enabled
+      if (error instanceof Error && error.message.includes('404')) {
+        this.logger.warn(`No GitHub Actions found for ${owner}/${repo} (repository may not have workflows)`);
+        return [];
+      }
       this.logger.error(`Failed to fetch workflow runs for ${owner}/${repo}`, error as Error);
       return [];
     }

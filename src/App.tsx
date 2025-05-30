@@ -10,6 +10,7 @@ import { GitHubErrorBoundary } from './components/ErrorBoundary';
 import { GitHubTokenBanner, TokenStatusIndicator } from './components/TokenValidation';
 import { TokenValidationProvider, useTokenValidation } from './contexts';
 import { ThemeProvider, useTheme } from './context';
+import { ToastProvider } from './components/Toast';
 import clsx from 'clsx';
 
 const queryClient = new QueryClient({
@@ -117,10 +118,12 @@ export const App: React.FC = () => {
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <TokenValidationProvider>
-            <Router>
-              <DashboardContent />
-              <ReactQueryDevtools initialIsOpen={false} />
-            </Router>
+            <ToastProvider position="top-right">
+              <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+                <DashboardContent />
+                <ReactQueryDevtools initialIsOpen={false} />
+              </Router>
+            </ToastProvider>
           </TokenValidationProvider>
         </QueryClientProvider>
       </ThemeProvider>

@@ -8,14 +8,26 @@ interface MetricsOverviewProps {
 }
 
 export const MetricsOverview: React.FC<MetricsOverviewProps> = ({ metrics }) => {
+  // Handle undefined or empty metrics
+  if (!metrics || !Array.isArray(metrics) || metrics.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 text-center">
+        <p className="text-gray-500 dark:text-gray-400">No metrics available</p>
+      </div>
+    );
+  }
+
   const totalPackages = metrics.length;
-  const healthyPackages = metrics.filter(m => m.status === 'healthy').length;
-  const warningPackages = metrics.filter(m => m.status === 'warning').length;
-  const criticalPackages = metrics.filter(m => m.status === 'critical').length;
+  const healthyPackages = metrics.filter(m => m && m.status === 'healthy').length;
+  const warningPackages = metrics.filter(m => m && m.status === 'warning').length;
+  const criticalPackages = metrics.filter(m => m && m.status === 'critical').length;
   
-  const passingBuilds = metrics.filter(m => m.metrics.buildStatus === 'passing').length;
-  const avgCoverage = metrics.reduce((acc, m) => acc + (m.metrics.testCoverage || 0), 0) / totalPackages;
-  const totalIssues = metrics.reduce((acc, m) => acc + (m.metrics.openIssues || 0), 0);
+  const passingBuilds = metrics.filter(m => m && m.metrics && m.metrics.buildStatus === 'passing').length;
+  const validMetrics = metrics.filter(m => m && m.metrics);
+  const avgCoverage = validMetrics.length > 0 
+    ? validMetrics.reduce((acc, m) => acc + (m.metrics.testCoverage || 0), 0) / validMetrics.length 
+    : 0;
+  const totalIssues = metrics.reduce((acc, m) => acc + (m && m.metrics ? (m.metrics.openIssues || 0) : 0), 0);
 
   const cards = [
     {

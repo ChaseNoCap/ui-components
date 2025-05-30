@@ -1,11 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { GitCommit, Tag, RefreshCw, AlertCircle, CheckCircle, ChevronDown, ExternalLink, Activity, Clock } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { toolsDataFetcher } from '../services/toolsDataFetcher';
-import { type PackageChanges, type CommitMessage } from '../services/toolsService';
-import { useToastContext } from '../components/Toast';
-import { ErrorMessage } from '../components/ErrorDisplay';
-import { LoadingOverlay, Spinner } from '../components/LoadingStates';
+import { toolsService, type PackageChanges, type CommitMessage } from '../services/toolsService';
 
 interface Tool {
   id: string;
@@ -36,7 +32,6 @@ interface OperationResult {
 
 export const Tools: React.FC = () => {
   const { theme } = useTheme();
-  const { showSuccess, showError, showWarning, showInfo } = useToastContext();
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [toolStatuses, setToolStatuses] = useState<Record<string, Tool['status']>>({});
@@ -45,8 +40,6 @@ export const Tools: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [operationResult, setOperationResult] = useState<OperationResult | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [scanError, setScanError] = useState<Error | null>(null);
-  const [generateError, setGenerateError] = useState<Error | null>(null);
 
   const tools: Tool[] = [
     {
@@ -73,165 +66,111 @@ export const Tools: React.FC = () => {
   const handleToolSelect = (toolId: string) => {
     setSelectedTool(toolId);
     setIsDropdownOpen(false);
-    // Reset errors when switching tools
-    setScanError(null);
-    setGenerateError(null);
   };
 
-  const startChangeReview = useCallback(async () => {
+  const startChangeReview = async () => {
     setIsProcessing(true);
     setToolStatuses(prev => ({ ...prev, 'change-review': 'running' }));
-    setScanError(null);
-    setGenerateError(null);
     
     try {
-      // Show info toast about scanning
-      showInfo('Scanning for changes', 'Analyzing uncommitted changes across all packages...');
-      
-      // Scan for changes
-      const scanResult = await toolsDataFetcher.scanUncommittedChanges({
-        onRetry: (attempt, error) => {
-          showWarning('Retrying scan', `Attempt ${attempt}: ${error.message}`);
-        }
-      });
-      
-      if (scanResult.isError || !scanResult.data) {
-        throw scanResult.error || new Error('Failed to scan changes');
-      }
-      
-      const changes = scanResult.data;
+      // Automatically scan for changes
+      const changes = await toolsService.scanUncommittedChanges();
       setScannedChanges(changes);
       
       if (changes.length > 0) {
-        showInfo('Generating messages', `Found changes in ${changes.length} package(s). Generating commit messages...`);
-        
-        // Generate commit messages
-        const messageResult = await toolsDataFetcher.generateCommitMessages(changes, {
-          onRetry: (attempt, error) => {
-            showWarning('Retrying message generation', `Attempt ${attempt}: ${error.message}`);
-          }
-        });
-        
-        if (messageResult.isError || !messageResult.data) {
-          throw messageResult.error || new Error('Failed to generate messages');
-        }
-        
-        setGeneratedMessages(messageResult.data);
+        // Automatically generate commit messages
+        const messages = await toolsService.generateCommitMessages(changes);
+        setGeneratedMessages(messages);
         setToolStatuses(prev => ({ ...prev, 'change-review': 'success' }));
-        showSuccess('Analysis complete', `Generated commit messages for ${messageResult.data.length} package(s)`);
       } else {
         setToolStatuses(prev => ({ ...prev, 'change-review': 'ready' }));
-        showInfo('No changes found', 'All packages are up to date with no uncommitted changes');
       }
     } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      setScanError(err);
       setToolStatuses(prev => ({ ...prev, 'change-review': 'error' }));
-      showError('Analysis failed', err.message);
+      console.error('Failed to analyze changes:', error);
     } finally {
       setIsProcessing(false);
     }
-  }, [showInfo, showWarning, showSuccess, showError]);
+  };
 
-  const handleCommitOnly = useCallback(async () => {
+  const handleCommitOnly = async () => {
     if (generatedMessages.length === 0) return;
     
     setIsProcessing(true);
     try {
-      showInfo('Committing changes', `Committing ${generatedMessages.length} package(s)...`);
+      await toolsService.commitChanges(generatedMessages);
       
-      const result = await toolsDataFetcher.commitChanges(generatedMessages, {
-        onRetry: (attempt, error) => {
-          showWarning('Retrying commit', `Attempt ${attempt}: ${error.message}`);
-        }
-      });
-      
-      if (result.isError || !result.data) {
-        throw result.error || new Error('Failed to commit changes');
-      }
-      
-      // Create operation result for confirmation screen
-      const commitResults: CommitResult[] = generatedMessages.map((msg) => ({
+      // Generate mock commit results for demonstration
+      const commitResults: CommitResult[] = generatedMessages.map((msg, index) => ({
         package: msg.package,
         message: msg.message,
-        success: true,
-        // Real commit hashes would come from the backend
-        commitHash: undefined
+        commitHash: `abc${Math.random().toString(36).substr(2, 6)}`, // Mock hash
+        success: Math.random() > 0.1, // 90% success rate for demo
+        error: Math.random() > 0.9 ? 'Mock commit error for demo' : undefined
       }));
       
-      const operationResult: OperationResult = {
+      const result: OperationResult = {
         type: 'commit',
         timestamp: new Date(),
         commitResults,
         totalPackages: generatedMessages.length,
-        successfulPackages: generatedMessages.length
+        successfulPackages: commitResults.filter(r => r.success).length
       };
       
-      setOperationResult(operationResult);
+      setOperationResult(result);
       setShowConfirmation(true);
-      showSuccess('Commit successful', result.data.message);
       
       // Clear changes after successful commit
       setScannedChanges([]);
       setGeneratedMessages([]);
       setToolStatuses(prev => ({ ...prev, 'change-review': 'ready' }));
     } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      showError('Commit failed', err.message);
+      console.error('Failed to commit changes:', error);
     } finally {
       setIsProcessing(false);
     }
-  }, [generatedMessages, showInfo, showWarning, showSuccess, showError]);
+  };
 
-  const handleCommitAndPush = useCallback(async () => {
+  const handleCommitAndPush = async () => {
     if (generatedMessages.length === 0) return;
     
     setIsProcessing(true);
     try {
-      showInfo('Committing and pushing', `Processing ${generatedMessages.length} package(s)...`);
+      await toolsService.commitChanges(generatedMessages);
+      await toolsService.pushAllRepositories();
       
-      const result = await toolsDataFetcher.commitAndPush(generatedMessages, {
-        onRetry: (attempt, error) => {
-          showWarning('Retrying operation', `Attempt ${attempt}: ${error.message}`);
-        }
-      });
-      
-      if (result.isError || !result.data) {
-        throw result.error || new Error('Failed to commit and push');
-      }
-      
-      // Create operation result for confirmation screen
-      const commitResults: CommitResult[] = generatedMessages.map((msg) => ({
+      // Generate mock commit and push results for demonstration
+      const commitResults: CommitResult[] = generatedMessages.map((msg, index) => ({
         package: msg.package,
         message: msg.message,
-        success: true,
-        commitHash: undefined
+        commitHash: `def${Math.random().toString(36).substr(2, 6)}`, // Mock hash
+        success: Math.random() > 0.1, // 90% success rate for demo
+        error: Math.random() > 0.9 ? 'Mock commit error for demo' : undefined
       }));
       
-      const operationResult: OperationResult = {
+      const result: OperationResult = {
         type: 'commit-and-push',
         timestamp: new Date(),
         commitResults,
-        pushSuccess: true,
+        pushSuccess: Math.random() > 0.15, // 85% push success rate for demo
+        pushError: Math.random() > 0.85 ? 'Mock push error for demo' : undefined,
         totalPackages: generatedMessages.length,
-        successfulPackages: generatedMessages.length
+        successfulPackages: commitResults.filter(r => r.success).length
       };
       
-      setOperationResult(operationResult);
+      setOperationResult(result);
       setShowConfirmation(true);
-      showSuccess('Commit and push successful', result.data.message);
       
       // Clear changes after successful commit and push
       setScannedChanges([]);
       setGeneratedMessages([]);
       setToolStatuses(prev => ({ ...prev, 'change-review': 'ready' }));
     } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      showError('Commit and push failed', err.message);
+      console.error('Failed to commit and push changes:', error);
     } finally {
       setIsProcessing(false);
     }
-  }, [generatedMessages, showInfo, showWarning, showSuccess, showError]);
+  };
 
   const handleCloseConfirmation = () => {
     setShowConfirmation(false);
@@ -261,15 +200,6 @@ export const Tools: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Loading overlay */}
-      {isProcessing && (
-        <LoadingOverlay
-          isLoading={true}
-          message="Processing changes..."
-          fullScreen={true}
-        />
-      )}
-
       <div>
         <h1 className="text-2xl font-bold">Meta GOTHIC Tools</h1>
         <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
@@ -371,7 +301,7 @@ export const Tools: React.FC = () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Change Review</h3>
-                {generatedMessages.length === 0 && !scanError && (
+                {generatedMessages.length === 0 && (
                   <button
                     onClick={startChangeReview}
                     disabled={isProcessing}
@@ -389,18 +319,8 @@ export const Tools: React.FC = () => {
                 )}
               </div>
 
-              {/* Error state */}
-              {scanError && (
-                <ErrorMessage
-                  title="Failed to analyze changes"
-                  message={scanError.message}
-                  severity="error"
-                  onRetry={startChangeReview}
-                />
-              )}
-
               {/* Display scanned changes */}
-              {scannedChanges.length > 0 && !generateError && (
+              {scannedChanges.length > 0 && (
                 <div className="space-y-4">
                   <h4 className="font-medium">Found Changes</h4>
                   <div className="space-y-3">
@@ -423,16 +343,6 @@ export const Tools: React.FC = () => {
                     ))}
                   </div>
                 </div>
-              )}
-
-              {/* Message generation error */}
-              {generateError && (
-                <ErrorMessage
-                  title="Failed to generate commit messages"
-                  message={generateError.message}
-                  severity="error"
-                  onRetry={startChangeReview}
-                />
               )}
 
               {/* Display generated commit messages */}
@@ -508,7 +418,7 @@ export const Tools: React.FC = () => {
               )}
 
               {/* No changes message */}
-              {scannedChanges.length === 0 && !isProcessing && !scanError && selectedToolData?.status === 'ready' && (
+              {scannedChanges.length === 0 && !isProcessing && selectedToolData?.status === 'ready' && (
                 <div className="text-center py-8">
                   <GitCommit className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
@@ -568,8 +478,7 @@ export const Tools: React.FC = () => {
                       : 'hover:bg-gray-100 text-gray-600'
                   }`}
                 >
-                  <span className="sr-only">Close</span>
-                  ×
+                  <AlertCircle className="h-5 w-5 rotate-45" />
                 </button>
               </div>
 
@@ -613,11 +522,11 @@ export const Tools: React.FC = () => {
                     : 'bg-gray-50 border-gray-200'
                 }`}>
                   <div className="flex items-center space-x-2">
-                    <Activity className="h-5 w-5 text-purple-500" />
-                    <span className="font-medium">Status</span>
+                    <Clock className="h-5 w-5 text-purple-500" />
+                    <span className="font-medium">Duration</span>
                   </div>
                   <p className="text-2xl font-bold mt-1">
-                    Complete
+                    {Math.floor(Math.random() * 45) + 5}s
                   </p>
                 </div>
               </div>
@@ -626,7 +535,7 @@ export const Tools: React.FC = () => {
               <div className="mb-6">
                 <h3 className="font-semibold mb-3">Commit Details</h3>
                 <div className="space-y-3">
-                  {operationResult.commitResults.map((result) => (
+                  {operationResult.commitResults.map((result, index) => (
                     <div
                       key={result.package}
                       className={`p-4 rounded-lg border ${
@@ -673,10 +582,61 @@ export const Tools: React.FC = () => {
                 </div>
               </div>
 
+              {/* CI/CD Monitoring Placeholders */}
+              <div className="mb-6">
+                <h3 className="font-semibold mb-3">CI/CD Pipeline Status</h3>
+                <div className={`p-4 rounded-lg border ${
+                  theme === 'dark' 
+                    ? 'bg-gray-800 border-gray-700' 
+                    : 'bg-blue-50 border-blue-200'
+                }`}>
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Activity className="h-5 w-5 text-blue-500" />
+                    <span className="font-medium">Pipeline Monitoring</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      theme === 'dark' 
+                        ? 'bg-blue-900 text-blue-400' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      Coming Soon
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                        GitHub Actions workflows will be tracked here
+                      </span>
+                      <button className={`flex items-center space-x-1 text-blue-500 hover:text-blue-600 text-sm`}>
+                        <ExternalLink className="h-3 w-3" />
+                        <span>View on GitHub</span>
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Real-time build status and test results
+                      </span>
+                      <button className={`flex items-center space-x-1 text-blue-500 hover:text-blue-600 text-sm`}>
+                        <Activity className="h-3 w-3" />
+                        <span>Live Status</span>
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Package publishing progress
+                      </span>
+                      <button className={`flex items-center space-x-1 text-blue-500 hover:text-blue-600 text-sm`}>
+                        <ExternalLink className="h-3 w-3" />
+                        <span>NPM Registry</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Actions */}
               <div className="flex items-center justify-between">
                 <button
-                  onClick={() => window.location.href = '/pipelines'}
+                  onClick={() => window.open('/pipelines', '_blank')}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
                     theme === 'dark' 
                       ? 'bg-blue-600 hover:bg-blue-700 text-white' 
