@@ -7,8 +7,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "vite",
-    "dev:full": "concurrently \"npm run dev\" \"npm run git-server\"",
+    "dev:full": "concurrently \"npm run dev\" \"npm run git-server\" \"npm run claude-api-server\"",
     "git-server": "node scripts/git-server.js",
+    "claude-api-server": "node scripts/claude-api-server.js",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",

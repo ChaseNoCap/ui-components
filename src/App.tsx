@@ -6,6 +6,7 @@ import { HealthDashboard } from './components/HealthDashboard';
 import { PipelineControl } from './components/PipelineControl';
 import { Tools } from './pages/Tools';
 import { GitHubErrorBoundary } from './components/ErrorBoundary';
+import { ClaudeConsoleStandalone } from './pages/ClaudeConsoleStandalone';
 import { GitHubTokenBanner } from './components/TokenValidation';
 import { Navigation } from './components/Navigation';
 import { TokenValidationProvider, useTokenValidation } from './contexts';
@@ -46,6 +47,7 @@ const DashboardContent: React.FC = () => {
         <Route path="/tools" element={<Tools />} />
         <Route path="/tools/repository-status" element={<div>Repository Status - Coming Soon</div>} />
         <Route path="/tools/manual-commit" element={<div>Manual Commit - Coming Soon</div>} />
+        <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
     </div>
   );

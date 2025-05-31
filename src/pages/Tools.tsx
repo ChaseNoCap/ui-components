@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { GitCommit, Tag, RefreshCw, AlertCircle, CheckCircle, ChevronDown, ExternalLink, Activity, Clock } from 'lucide-react';
+import { GitCommit, Tag, RefreshCw, AlertCircle, CheckCircle, ChevronDown, ExternalLink, Activity, Clock, Terminal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { toolsDataFetcher } from '../services/toolsDataFetcher';
@@ -7,6 +7,9 @@ import { type PackageChanges, type CommitMessage } from '../services/toolsServic
 import { useToastContext } from '../components/Toast';
 import { ErrorMessage } from '../components/ErrorDisplay';
 import { LoadingOverlay, Spinner } from '../components/LoadingStates';
+import { ClaudeConsole } from '../components/ClaudeConsole';
+import { TestConsole } from '../components/ClaudeConsole/TestConsole';
+import { SimpleConsole } from '../components/ClaudeConsole/SimpleConsole';
 
 interface Tool {
   id: string;
@@ -40,6 +43,8 @@ export const Tools: React.FC = () => {
   const navigate = useNavigate();
   const { showSuccess, showError, showWarning, showInfo } = useToastContext();
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
+  
+  console.log('Tools component rendered, selectedTool:', selectedTool);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [toolStatuses, setToolStatuses] = useState<Record<string, Tool['status']>>({});
   const [scannedChanges, setScannedChanges] = useState<PackageChanges[]>([]);
@@ -51,6 +56,14 @@ export const Tools: React.FC = () => {
   const [generateError, setGenerateError] = useState<Error | null>(null);
 
   const tools: Tool[] = [
+    {
+      id: 'claude-console',
+      title: 'Claude Console',
+      description: 'Interactive Claude terminal with session management and real-time streaming',
+      icon: <Terminal className="h-6 w-6" />,
+      isReady: true,
+      status: toolStatuses['claude-console'] || 'ready'
+    },
     {
       id: 'change-review',
       title: 'Change Review',
@@ -260,6 +273,14 @@ export const Tools: React.FC = () => {
   };
 
   const selectedToolData = selectedTool ? tools.find(t => t.id === selectedTool) : null;
+
+  // Show Claude Console immediately if selected
+  if (selectedTool === 'claude-console') {
+    console.log('Rendering Claude Console');
+    return <SimpleConsole />;
+    // return <TestConsole />;
+    // return <ClaudeConsole />;
+  }
 
   return (
     <div className="space-y-6">
