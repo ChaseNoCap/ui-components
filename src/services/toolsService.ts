@@ -251,44 +251,15 @@ class ToolsService {
   }
 
   /**
-   * Generate commit messages using Claude Code via Node.js subprocess
-   * Calls backend endpoint that spawns Claude Code to analyze actual changes
+   * Generate commit messages based on file changes
    */
   async generateCommitMessages(changes: PackageChanges[]): Promise<CommitMessage[]> {
-    logger.info('Generating commit messages via Claude Code for', changes.length, 'packages');
-    
-    try {
-      // Call backend endpoint that uses Claude Code subprocess
-      const response = await fetch('/api/claude/generate-commit-messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          changes,
-          timestamp: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude Code API failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      logger.info('Generated commit messages via Claude Code:', result);
-      
-      return result.messages || [];
-      
-    } catch (error) {
-      logger.error('Failed to generate commit messages via Claude Code:', error as Error);
-      
-      // Fallback to basic generated messages based on file analysis
-      return this.generateFallbackCommitMessages(changes);
-    }
+    logger.info('Generating commit messages for', changes.length, 'packages');
+    return this.generateFallbackCommitMessages(changes);
   }
 
   /**
-   * Fallback commit message generation when Claude Code is unavailable
+   * Generate commit messages based on file analysis
    */
   private generateFallbackCommitMessages(changes: PackageChanges[]): CommitMessage[] {
     return changes.map(pkg => {

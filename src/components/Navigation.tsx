@@ -44,13 +44,6 @@ export const Navigation: React.FC = () => {
       icon: Wrench,
       dropdown: [
         {
-          label: 'Change Review',
-          action: () => {
-            setOpenDropdown(null);
-            navigate('/tools/change-review');
-          },
-        },
-        {
           label: 'Repository Status',
           path: '/tools/repository-status',
         },

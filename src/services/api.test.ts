@@ -22,7 +22,6 @@ describe('API Service', () => {
       const repos = await fetchRepositories();
       const packageNames = repos.map(r => r.name);
       
-      expect(packageNames).toContain('claude-client');
       expect(packageNames).toContain('prompt-toolkit');
       expect(packageNames).toContain('sdlc-config');
       expect(packageNames).toContain('ui-components');

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { GitCommit, Tag, RefreshCw, AlertCircle, CheckCircle, ChevronDown, ExternalLink, Activity, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { toolsDataFetcher } from '../services/toolsDataFetcher';
 import { type PackageChanges, type CommitMessage } from '../services/toolsService';
@@ -36,6 +37,7 @@ interface OperationResult {
 
 export const Tools: React.FC = () => {
   const { theme } = useTheme();
+  const navigate = useNavigate();
   const { showSuccess, showError, showWarning, showInfo } = useToastContext();
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -52,7 +54,7 @@ export const Tools: React.FC = () => {
     {
       id: 'change-review',
       title: 'Change Review',
-      description: 'Automatically get current changes and generate AI messages for review with commit options',
+      description: 'Review uncommitted changes and generate commit messages with commit options',
       icon: <GitCommit className="h-6 w-6" />,
       isReady: true,
       status: toolStatuses['change-review'] || 'ready'
