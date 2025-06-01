@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, GitBranch, Wrench, Moon, Sun, ChevronDown, Settings } from 'lucide-react';
+import { Activity, GitBranch, Wrench, Moon, Sun, ChevronDown, Settings, BarChart } from 'lucide-react';
 import { TokenStatusIndicator } from './TokenValidation';
 import { useTokenValidation } from '../contexts';
 import { useTheme } from '../context';
@@ -61,6 +61,11 @@ export const Navigation: React.FC = () => {
           path: '/tools/manual-commit',
         },
       ],
+    },
+    {
+      label: 'Agent Status',
+      icon: BarChart,
+      path: '/agent-status',
     },
     {
       label: 'Config',

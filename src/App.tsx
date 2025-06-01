@@ -16,6 +16,7 @@ import { TokenValidationProvider, useTokenValidation } from './contexts';
 import { ThemeProvider } from './context';
 import { ToastProvider } from './components/Toast';
 import Config from './pages/Config';
+import AgentStatus from './pages/AgentStatus';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +68,7 @@ const DashboardContent: React.FC = () => {
         <Route path="/tools/repository-status" element={<RepositoryStatusPage />} />
         <Route path="/tools/manual-commit" element={<ManualCommitPage />} />
         <Route path="/config" element={<Config />} />
+        <Route path="/agent-status" element={<AgentStatus />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
     </div>

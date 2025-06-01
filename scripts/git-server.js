@@ -1484,7 +1484,142 @@ app.listen(PORT, () => {
   console.log('  POST /api/git/batch-push - Push changes in multiple repositories');
   console.log('  POST /api/claude/batch-commit-messages - Generate AI commit messages');
   console.log('  POST /api/claude/executive-summary - Generate executive summary');
+  console.log('  GET  /api/claude/runs - Get agent run history');
+  console.log('  GET  /api/claude/runs/statistics - Get run statistics');
+  console.log('  POST /api/claude/runs/:id/retry - Retry a failed run');
   console.log('  GET  /api/git/health - Health check');
+});
+
+// Agent run endpoints
+const WORKSPACE_ROOT = path.join(__dirname, '../../..');
+const runStoragePath = path.join(WORKSPACE_ROOT, '.claude-runs');
+
+// Mock run storage (in real implementation, this would use the actual RunStorage class)
+const mockRuns = [
+  {
+    id: 'run-1',
+    repository: 'ui-components',
+    status: 'SUCCESS',
+    startedAt: new Date(Date.now() - 3600000).toISOString(),
+    completedAt: new Date(Date.now() - 3500000).toISOString(),
+    duration: 5000,
+    input: {
+      prompt: 'Generate commit message for UI changes',
+      diff: 'diff --git a/src/index.js...',
+      recentCommits: ['feat: add button component', 'fix: resolve type errors'],
+      model: 'claude-3-opus',
+      temperature: 0.7
+    },
+    output: {
+      message: 'feat(ui): add responsive button component with dark mode support',
+      confidence: 0.85,
+      rawResponse: 'Based on the changes...',
+      tokensUsed: 1250
+    },
+    retryCount: 0
+  },
+  {
+    id: 'run-2',
+    repository: 'meta-gothic-app',
+    status: 'FAILED',
+    startedAt: new Date(Date.now() - 7200000).toISOString(),
+    completedAt: new Date(Date.now() - 7190000).toISOString(),
+    duration: 3000,
+    input: {
+      prompt: 'Generate commit message for API changes',
+      diff: 'diff --git a/api/server.js...',
+      recentCommits: ['feat: add auth endpoint', 'chore: update deps'],
+      model: 'claude-3-opus',
+      temperature: 0.7
+    },
+    error: {
+      code: 'TIMEOUT',
+      message: 'Claude process timed out after 30 seconds',
+      recoverable: true
+    },
+    retryCount: 0
+  }
+];
+
+// Get all runs
+app.get('/api/claude/runs', async (req, res) => {
+  try {
+    const { status, repository } = req.query;
+    
+    let filteredRuns = [...mockRuns];
+    
+    if (status && status !== 'ALL') {
+      filteredRuns = filteredRuns.filter(run => run.status === status);
+    }
+    
+    if (repository && repository !== 'ALL') {
+      filteredRuns = filteredRuns.filter(run => run.repository === repository);
+    }
+    
+    res.json({ runs: filteredRuns });
+  } catch (error) {
+    console.error('Error fetching runs:', error);
+    res.status(500).json({ error: 'Failed to fetch runs' });
+  }
+});
+
+// Get run statistics
+app.get('/api/claude/runs/statistics', async (req, res) => {
+  try {
+    const stats = {
+      total: mockRuns.length,
+      byStatus: {
+        SUCCESS: mockRuns.filter(r => r.status === 'SUCCESS').length,
+        FAILED: mockRuns.filter(r => r.status === 'FAILED').length,
+        RUNNING: 0,
+        QUEUED: 0,
+        CANCELLED: 0,
+        RETRYING: 0
+      },
+      byRepository: [
+        { repository: 'ui-components', count: 1 },
+        { repository: 'meta-gothic-app', count: 1 }
+      ],
+      averageDuration: mockRuns.reduce((sum, r) => sum + (r.duration || 0), 0) / mockRuns.length,
+      successRate: mockRuns.filter(r => r.status === 'SUCCESS').length / mockRuns.length
+    };
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+});
+
+// Retry a run
+app.post('/api/claude/runs/:runId/retry', async (req, res) => {
+  try {
+    const { runId } = req.params;
+    const originalRun = mockRuns.find(r => r.id === runId);
+    
+    if (!originalRun) {
+      return res.status(404).json({ error: 'Run not found' });
+    }
+    
+    const newRun = {
+      ...originalRun,
+      id: `run-retry-${Date.now()}`,
+      status: 'QUEUED',
+      startedAt: new Date().toISOString(),
+      completedAt: undefined,
+      duration: undefined,
+      output: undefined,
+      error: undefined,
+      retryCount: originalRun.retryCount + 1,
+      parentRunId: runId
+    };
+    
+    mockRuns.push(newRun);
+    res.json(newRun);
+  } catch (error) {
+    console.error('Error retrying run:', error);
+    res.status(500).json({ error: 'Failed to retry run' });
+  }
 });
 
 // Graceful shutdown
