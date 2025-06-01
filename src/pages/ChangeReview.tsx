@@ -489,7 +489,7 @@ export const ChangeReviewPage: React.FC = () => {
                                   new Map(prev).set(repo.name, e.target.value)
                                 )}
                                 className="font-mono text-sm"
-                                rows={3}
+                                rows={8}
                               />
                               <div className="flex gap-2">
                                 <Button 

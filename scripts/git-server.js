@@ -406,8 +406,8 @@ async function getDetailedRepoData(repoPath, repoName) {
     hasChanges: files.length > 0,
     recentCommits: recentCommits.slice(0, 5), // Limit to 5 commits
     gitDiff: {
-      staged: stagedDiff.substring(0, 50000), // Limit size
-      unstaged: unstagedDiff.substring(0, 50000)
+      staged: stagedDiff.substring(0, 100000), // Increased limit for better context
+      unstaged: unstagedDiff.substring(0, 100000)
     },
     newFileContents,
     statistics: {
@@ -540,6 +540,34 @@ async function callClaude(prompt) {
   });
 }
 
+// Helper function to analyze diff content
+function analyzeDiffContent(gitDiff) {
+  if (!gitDiff || (!gitDiff.staged && !gitDiff.unstaged)) {
+    return null;
+  }
+  
+  const allDiffs = (gitDiff.staged || '') + '\n' + (gitDiff.unstaged || '');
+  
+  // Count additions and deletions
+  const additions = (allDiffs.match(/^\+[^+]/gm) || []).length;
+  const deletions = (allDiffs.match(/^-[^-]/gm) || []).length;
+  
+  // Find function/method changes
+  const functionChanges = allDiffs.match(/^[+-]\s*(function|const|let|var|class|interface|type|export)\s+\w+/gm) || [];
+  const methodChanges = allDiffs.match(/^[+-]\s*\w+\s*\([^)]*\)\s*{/gm) || [];
+  
+  // Find import changes
+  const importChanges = allDiffs.match(/^[+-]\s*import\s+.*/gm) || [];
+  
+  const summary = [];
+  if (additions > 0) summary.push(`${additions} lines added`);
+  if (deletions > 0) summary.push(`${deletions} lines deleted`);
+  if (functionChanges.length > 0) summary.push(`${functionChanges.length} function/class changes`);
+  if (importChanges.length > 0) summary.push(`${importChanges.length} import changes`);
+  
+  return summary.length > 0 ? summary.join(', ') : null;
+}
+
 // Helper function to generate commit message prompt
 function generateCommitMessagePrompt(repo) {
   const recentCommits = repo.recentCommits
@@ -565,37 +593,98 @@ function generateCommitMessagePrompt(repo) {
     else if (f.status === 'D') deletedFiles.push(f.file);
     else modifiedFiles.push(f.file);
   });
+  
+  // Analyze the actual changes from diffs
+  const diffSummary = analyzeDiffContent(repo.gitDiff);
     
-  return `Analyze the following git changes and generate a conventional commit message following the style of recent commits.
+  // Group files by directory/component
+  const filesByComponent = {};
+  repo.gitStatus.forEach(f => {
+    const parts = f.file.split('/');
+    const component = parts.length > 1 ? parts[0] : 'root';
+    if (!filesByComponent[component]) filesByComponent[component] = [];
+    filesByComponent[component].push(f.file);
+  });
+  
+  const componentSummary = Object.entries(filesByComponent)
+    .map(([comp, files]) => `${comp} (${files.length} files)`)
+    .join(', ');
+
+  return `You are a senior developer on the metaGOTHIC team reviewing these changes. Write a commit message that you'd be proud to have in the git history - one that tells the story of this work and helps your teammates understand what you accomplished and why.
 
 Repository: ${repo.name}
 Branch: ${repo.branch}
 
-Recent commits for style reference:
+Recent commits from the team (match their style and detail level):
 ${recentCommits}
 
-Current changes:
+Files touched: ${componentSummary}
 ${changes}
 
-Change summary:
-- ${newFiles.length} new files
-- ${modifiedFiles.length} modified files  
-- ${deletedFiles.length} deleted files
-- File types affected: ${Array.from(fileTypes).join(', ')}
+${diffSummary ? `Quick stats: ${diffSummary}` : ''}
 
-${repo.gitDiff.staged ? `Staged diff (showing actual code changes):\n${repo.gitDiff.staged}\n` : ''}
-${repo.gitDiff.unstaged ? `Unstaged diff (showing actual code changes):\n${repo.gitDiff.unstaged}\n` : ''}
+THE ACTUAL CODE CHANGES:
+${repo.gitDiff.staged ? `
+STAGED DIFF:
+${repo.gitDiff.staged}
+` : ''}
+${repo.gitDiff.unstaged ? `
+UNSTAGED DIFF:
+${repo.gitDiff.unstaged}
+` : ''}
+${repo.newFileContents && Object.keys(repo.newFileContents).length > 0 ? `
+NEW FILES:
+${Object.entries(repo.newFileContents).map(([file, content]) => `
+=== ${file} ===
+${content}
+`).join('\n')}
+` : ''}
 
-${repo.newFileContents && Object.keys(repo.newFileContents).length > 0 ? `New file contents:\n${Object.entries(repo.newFileContents).map(([file, content]) => `\n=== ${file} ===\n${content}`).join('\n')}\n` : ''}
+Write a commit message that:
 
-Instructions:
-1. Generate a commit message following conventional commit format (feat:, fix:, chore:, docs:, etc)
-2. Include specific details about what changed, similar to the recent commits shown above
-3. If the change is to fix something, explain what was fixed
-4. If adding features, briefly describe the feature
-5. For chore commits, be specific about what was updated/cleaned/refactored
-6. Keep it concise but informative (1-2 lines max)
-7. Return ONLY the commit message, no explanations or metadata`;
+1. Starts with the conventional format: type(scope): what you accomplished
+
+2. Tells the STORY of this change - imagine explaining to a teammate:
+   - What problem were you solving? What wasn't working before?
+   - What can they do now that they couldn't before?
+   - Any gotchas or things to watch out for?
+   - What key decisions did you make and why?
+
+3. Write naturally, like you're talking to your team. Be specific about:
+   - Component names, function names, endpoints
+   - The actual behavior that changed
+   - Performance impacts or improvements
+   - Any follow-up work needed
+
+Some examples from great developers:
+
+feat(navigation): add Tools dropdown with dedicated pages for repo management
+
+Finally broke out the Tools section into a proper dropdown menu. The single Tools
+page was getting unwieldy, so now we have:
+• Repository Status - live view of all repos with git status, branch info, sync state
+• Manual Commit - one-off commits with AI assist when you need more control
+• Change Review - batch operations across all repos (already existed)
+• Mobile-responsive with click-outside handling and ARIA labels
+
+fix(git-server): stop path traversal vulnerability in repo operations
+
+Discovered that malicious paths could escape the project root - yikes! Fixed by:
+• Added strict path validation using path.resolve() and startsWith() checks
+• All endpoints now verify paths stay within meta-gothic-framework root
+• Also fixed submodule detection that was incorrectly flagging regular dirs
+• Bumped diff limits to 100KB (was truncating large refactors at 50KB)
+
+refactor(changeReview): extract git operations into dedicated service class
+
+The ChangeReview component was doing way too much. Pulled all the git logic into
+ChangeReviewService to separate concerns properly:
+• Cleaner testing - can mock the service instead of fetch calls
+• Better error handling with typed errors and user-friendly messages
+• Progressive loading states so users know what's happening
+• Sets us up nicely for WebSocket integration when we add real-time updates
+
+Write your commit message below (no explanations, just the commit):`;
 }
 
 // Helper function to generate executive summary prompt
@@ -603,19 +692,42 @@ function generateExecutiveSummaryPrompt(commitMessages) {
   const messages = commitMessages
     .map(cm => `- ${cm.repo}: ${cm.message}`)
     .join('\n');
+  
+  // Group commits by type
+  const commitTypes = {};
+  commitMessages.forEach(cm => {
+    const match = cm.message.match(/^(\w+)(\(.+?\))?:/);
+    const type = match ? match[1] : 'other';
+    if (!commitTypes[type]) commitTypes[type] = [];
+    commitTypes[type].push(cm);
+  });
+  
+  const typesSummary = Object.entries(commitTypes)
+    .map(([type, commits]) => `${type}: ${commits.length} commit${commits.length > 1 ? 's' : ''}`)
+    .join(', ');
     
-  return `Create an executive summary of the following proposed commits across multiple repositories.
+  return `Create a concise executive summary of the following development work across the metaGOTHIC framework.
 
-Proposed commits:
+Repositories with changes (${commitMessages.length} total):
 ${messages}
 
-Generate a brief executive summary that:
-1. Summarizes the overall changes being made
-2. Groups related changes together
-3. Highlights the most significant changes
-4. Uses clear, non-technical language where possible
+Commit type distribution: ${typesSummary}
 
-Format as 3-5 bullet points using markdown. Focus on the impact and purpose of changes.
+Generate an executive summary that:
+1. Provides a HIGH-LEVEL overview suitable for stakeholders
+2. Groups related changes into themes (e.g., "UI Enhancements", "API Improvements", "Bug Fixes")
+3. Highlights the BUSINESS VALUE and USER IMPACT of changes
+4. Identifies any cross-repository dependencies or impacts
+5. Notes any significant technical improvements or risks
+
+Format as 3-5 concise bullet points using markdown. Each bullet should be a complete thought that stands alone.
+Focus on WHAT was accomplished and WHY it matters, not technical implementation details.
+
+Example format:
+• Enhanced developer experience with new repository management tools in the UI
+• Improved system reliability by fixing critical path resolution issues
+• Expanded API capabilities to support real-time status monitoring
+
 Return ONLY the bullet points, no introduction or explanations.`;
 }
 
