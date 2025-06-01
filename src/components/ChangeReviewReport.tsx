@@ -50,11 +50,11 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
       report.executiveSummary,
       '',
       '## Statistics',
-      `- Total Files: ${report.statistics.totalFiles}`,
-      `- Additions: ${report.statistics.totalAdditions}`,
-      `- Modifications: ${report.statistics.totalModifications}`,
-      `- Deletions: ${report.statistics.totalDeletions}`,
-      `- Affected Packages: ${report.statistics.affectedPackages.join(', ')}`,
+      `- Total Files: ${report.statistics?.totalFiles || 0}`,
+      `- Additions: ${report.statistics?.totalAdditions || 0}`,
+      `- Modifications: ${report.statistics?.totalModifications || 0}`,
+      `- Deletions: ${report.statistics?.totalDeletions || 0}`,
+      `- Affected Packages: ${report.statistics?.affectedPackages?.join(', ') || 'None'}`,
       '',
       '## Repository Details',
       ''
@@ -64,7 +64,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
       if (repo.hasChanges) {
         lines.push(`### ${repo.name}`);
         lines.push(`Branch: ${repo.branch.current}`);
-        lines.push(`Files Changed: ${repo.statistics.totalFiles}`);
+        lines.push(`Files Changed: ${repo.statistics?.totalFiles || 0}`);
         lines.push('');
         
         if (repo.generatedCommitMessage) {
@@ -104,10 +104,11 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
 
   // Calculate percentage for each change type
   const getChangeTypePercentage = (type: 'additions' | 'modifications' | 'deletions') => {
-    const total = report.statistics.totalFiles;
+    const total = report.statistics?.totalFiles || 0;
     if (total === 0) return 0;
     
-    const value = report.statistics[`total${type.charAt(0).toUpperCase() + type.slice(1)}`];
+    const key = `total${type.charAt(0).toUpperCase() + type.slice(1)}` as keyof typeof report.statistics;
+    const value = report.statistics?.[key] || 0;
     return Math.round((value / total) * 100);
   };
 
@@ -159,7 +160,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                 <FilePlus className="h-5 w-5 text-green-600" />
               </div>
               <div className="text-2xl font-bold text-green-800">
-                {report.statistics.totalAdditions}
+                {report.statistics?.totalAdditions || 0}
               </div>
               <div className="text-sm text-green-600">
                 {getChangeTypePercentage('additions')}% of changes
@@ -173,7 +174,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                 <FileEdit className="h-5 w-5 text-orange-600" />
               </div>
               <div className="text-2xl font-bold text-orange-800">
-                {report.statistics.totalModifications}
+                {report.statistics?.totalModifications || 0}
               </div>
               <div className="text-sm text-orange-600">
                 {getChangeTypePercentage('modifications')}% of changes
@@ -187,7 +188,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                 <FileMinus className="h-5 w-5 text-red-600" />
               </div>
               <div className="text-2xl font-bold text-red-800">
-                {report.statistics.totalDeletions}
+                {report.statistics?.totalDeletions || 0}
               </div>
               <div className="text-sm text-red-600">
                 {getChangeTypePercentage('deletions')}% of changes
@@ -199,7 +200,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
           <div className="mt-4">
             <h4 className="text-sm font-medium text-gray-700 mb-2">Affected Packages</h4>
             <div className="flex flex-wrap gap-2">
-              {report.statistics.affectedPackages.map(pkg => (
+              {(report.statistics?.affectedPackages || []).map(pkg => (
                 <Badge key={pkg} variant="secondary">
                   <Code2 className="h-3 w-3 mr-1" />
                   {pkg}
@@ -251,7 +252,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                     </td>
                     <td className="text-center py-3">
                       {repo.hasChanges ? (
-                        <Badge variant="outline">{repo.statistics.totalFiles}</Badge>
+                        <Badge variant="outline">{repo.statistics?.totalFiles || 0}</Badge>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
@@ -259,13 +260,13 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                     <td className="text-center py-3">
                       {repo.hasChanges ? (
                         <div className="flex items-center justify-center gap-1">
-                          {repo.statistics.additions > 0 && (
+                          {(repo.statistics?.additions || 0) > 0 && (
                             <FilePlus className="h-4 w-4 text-green-500" />
                           )}
-                          {repo.statistics.modifications > 0 && (
+                          {(repo.statistics?.modifications || 0) > 0 && (
                             <FileEdit className="h-4 w-4 text-orange-500" />
                           )}
-                          {repo.statistics.deletions > 0 && (
+                          {(repo.statistics?.deletions || 0) > 0 && (
                             <FileMinus className="h-4 w-4 text-red-500" />
                           )}
                         </div>
@@ -306,16 +307,16 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                 const maxChanges = Math.max(
                   ...report.repositories
                     .filter(r => r.hasChanges)
-                    .map(r => r.statistics.totalFiles)
+                    .map(r => r.statistics?.totalFiles || 0)
                 );
-                const percentage = (repo.statistics.totalFiles / maxChanges) * 100;
+                const percentage = ((repo.statistics?.totalFiles || 0) / maxChanges) * 100;
 
                 return (
                   <div key={repo.name}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium">{repo.name}</span>
                       <span className="text-sm text-gray-600">
-                        {repo.statistics.totalFiles} files
+                        {repo.statistics?.totalFiles || 0} files
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">

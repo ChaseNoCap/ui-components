@@ -267,24 +267,24 @@ export const ChangeReviewPage: React.FC = () => {
               {/* Statistics */}
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
-                  <div className="text-2xl font-bold">{report.statistics.totalFiles}</div>
+                  <div className="text-2xl font-bold">{report.statistics?.totalFiles || 0}</div>
                   <div className="text-sm text-gray-600">Total Files</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {report.statistics.totalAdditions}
+                    {report.statistics?.totalAdditions || 0}
                   </div>
                   <div className="text-sm text-gray-600">Additions</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-orange-600">
-                    {report.statistics.totalModifications}
+                    {report.statistics?.totalModifications || 0}
                   </div>
                   <div className="text-sm text-gray-600">Modifications</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-red-600">
-                    {report.statistics.totalDeletions}
+                    {report.statistics?.totalDeletions || 0}
                   </div>
                   <div className="text-sm text-gray-600">Deletions</div>
                 </div>
@@ -326,7 +326,7 @@ export const ChangeReviewPage: React.FC = () => {
                       )}
                       <CardTitle className="text-lg">{repo.name}</CardTitle>
                       <Badge variant={repo.hasChanges ? 'default' : 'secondary'}>
-                        {repo.statistics.totalFiles} files
+                        {repo.statistics?.totalFiles || 0} files
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2">

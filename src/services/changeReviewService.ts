@@ -107,7 +107,18 @@ export class ChangeReviewService {
         total: data.repositories.length
       });
 
-      return data.repositories;
+      // Ensure each repository has statistics property
+      return data.repositories.map((repo: any) => ({
+        ...repo,
+        statistics: repo.statistics || {
+          totalFiles: 0,
+          stagedFiles: 0,
+          unstagedFiles: 0,
+          additions: 0,
+          modifications: 0,
+          deletions: 0
+        }
+      }));
     } catch (error) {
       console.error('Error scanning repositories:', error);
       throw error;
@@ -138,7 +149,19 @@ export class ChangeReviewService {
         throw new Error(data.error || 'Unknown error getting repository details');
       }
 
-      return data.repository;
+      // Ensure repository has statistics property
+      const repository = data.repository;
+      return {
+        ...repository,
+        statistics: repository.statistics || {
+          totalFiles: 0,
+          stagedFiles: 0,
+          unstagedFiles: 0,
+          additions: 0,
+          modifications: 0,
+          deletions: 0
+        }
+      };
     } catch (error) {
       console.error('Error collecting repository data:', error);
       throw error;
@@ -292,10 +315,20 @@ export class ChangeReviewService {
 
     repositories.forEach(repo => {
       if (repo.hasChanges) {
-        statistics.totalFiles += repo.statistics.totalFiles;
-        statistics.totalAdditions += repo.statistics.additions;
-        statistics.totalDeletions += repo.statistics.deletions;
-        statistics.totalModifications += repo.statistics.modifications;
+        // Ensure statistics exists with defaults
+        const repoStats = repo.statistics || {
+          totalFiles: 0,
+          additions: 0,
+          deletions: 0,
+          modifications: 0,
+          stagedFiles: 0,
+          unstagedFiles: 0
+        };
+        
+        statistics.totalFiles += repoStats.totalFiles || 0;
+        statistics.totalAdditions += repoStats.additions || 0;
+        statistics.totalDeletions += repoStats.deletions || 0;
+        statistics.totalModifications += repoStats.modifications || 0;
         
         if (!statistics.affectedPackages.includes(repo.name)) {
           statistics.affectedPackages.push(repo.name);
@@ -352,7 +385,8 @@ export class ChangeReviewService {
     return repositories.map(repo => {
       if (!repo.hasChanges) return repo;
 
-      const { additions, modifications, deletions } = repo.statistics;
+      const stats = repo.statistics || { additions: 0, modifications: 0, deletions: 0 };
+      const { additions = 0, modifications = 0, deletions = 0 } = stats;
       const actions = [];
       
       if (additions > 0) actions.push(`add ${additions} file${additions > 1 ? 's' : ''}`);
@@ -381,7 +415,7 @@ export class ChangeReviewService {
     }
 
     const totalChanges = changedRepos.reduce(
-      (sum, repo) => sum + repo.statistics.totalFiles,
+      (sum, repo) => sum + (repo.statistics?.totalFiles || 0),
       0
     );
 
