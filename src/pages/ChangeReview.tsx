@@ -47,9 +47,7 @@ export const ChangeReviewPage: React.FC = () => {
         (progress) => setScanProgress(progress)
       );
       
-      // Set a rendering stage to show we're preparing the UI
-      setScanProgress({ stage: 'complete', message: 'Preparing results...' });
-      
+      // Set report first
       setReport(reviewReport);
       
       // Auto-expand repos with changes
@@ -58,7 +56,12 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
-      toast.success('Change review completed successfully!');
+      // Delay closing modal to ensure DOM is fully updated
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanProgress(null);
+        toast.success('Change review completed successfully!');
+      }, 500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
@@ -230,19 +233,6 @@ export const ChangeReviewPage: React.FC = () => {
       startReview();
     }
   }, [hasInitialLoad, startReview]);
-
-  // Close loading modal only after report is rendered
-  useEffect(() => {
-    if (report && isScanning && scanProgress?.stage === 'complete') {
-      // Use RAF to ensure the DOM has updated
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setIsScanning(false);
-          setScanProgress(null);
-        });
-      });
-    }
-  }, [report, isScanning, scanProgress]);
 
   // Get status badge
   const getStatusBadge = (status: string) => {

@@ -640,51 +640,68 @@ ${content}
 `).join('\n')}
 ` : ''}
 
-Write a commit message that:
+Write a commit message following these STRICT rules:
 
-1. Starts with the conventional format: type(scope): what you accomplished
+1. First line: type(scope): concise summary (MUST be under 72 chars)
+   - Be specific but brief - save details for bullet points
+   - No period at the end
 
-2. Tells the STORY of this change - imagine explaining to a teammate:
-   - What problem were you solving? What wasn't working before?
-   - What can they do now that they couldn't before?
-   - Any gotchas or things to watch out for?
-   - What key decisions did you make and why?
+2. Second line: BLANK (required by git)
 
-3. Write naturally, like you're talking to your team. Be specific about:
-   - Component names, function names, endpoints
-   - The actual behavior that changed
-   - Performance impacts or improvements
-   - Any follow-up work needed
+3. Third line onward: Brief intro (1-2 lines max, each under 80 chars)
+   explaining WHY this change was needed
 
-Some examples from great developers:
+4. Then bullet points with key details:
+   • Each bullet point starts with "• " (bullet + space)
+   • Each line MUST be under 80 characters (wrap if needed)
+   • Include specific function names, components, files
+   • Explain what changed and why it matters
+   • 3-5 bullet points is ideal
 
-feat(navigation): add Tools dropdown with dedicated pages for repo management
+Examples of PROPERLY FORMATTED commit messages:
 
-Finally broke out the Tools section into a proper dropdown menu. The single Tools
-page was getting unwieldy, so now we have:
-• Repository Status - live view of all repos with git status, branch info, sync state
-• Manual Commit - one-off commits with AI assist when you need more control
-• Change Review - batch operations across all repos (already existed)
-• Mobile-responsive with click-outside handling and ARIA labels
+feat(navigation): add Tools dropdown menu for better organization
 
-fix(git-server): stop path traversal vulnerability in repo operations
+The Tools page was becoming unwieldy with too many features. Created a
+dropdown menu to organize repository management tools more effectively.
 
-Discovered that malicious paths could escape the project root - yikes! Fixed by:
-• Added strict path validation using path.resolve() and startsWith() checks
-• All endpoints now verify paths stay within meta-gothic-framework root
-• Also fixed submodule detection that was incorrectly flagging regular dirs
-• Bumped diff limits to 100KB (was truncating large refactors at 50KB)
+• Added dropdown with Repository Status, Manual Commit, Change Review
+• Implemented mobile-responsive behavior with touch support
+• Used click-outside detection and proper ARIA labels for a11y
+• Integrated with existing routing - all paths under /tools/*
+• Fixed theme context issues in Tools components
 
-refactor(changeReview): extract git operations into dedicated service class
+fix(git-server): prevent path traversal vulnerability in git operations
 
-The ChangeReview component was doing way too much. Pulled all the git logic into
-ChangeReviewService to separate concerns properly:
-• Cleaner testing - can mock the service instead of fetch calls
-• Better error handling with typed errors and user-friendly messages
-• Progressive loading states so users know what's happening
-• Sets us up nicely for WebSocket integration when we add real-time updates
+Critical security issue where paths could escape project root. This could
+have allowed access to system files outside the meta-gothic-framework.
 
-Write your commit message below (no explanations, just the commit):`;
+• Added path.resolve() + startsWith() validation on all endpoints
+• Reject any paths that try to escape meta-gothic-framework root
+• Fixed submodule detection treating regular directories as submodules
+• Increased diff size limits from 50KB to 100KB for large refactors
+• Added proper error messages for path validation failures
+
+refactor(changeReview): extract git operations to dedicated service
+
+The ChangeReview component had too many responsibilities, making it hard
+to test and maintain. Separated concerns for better architecture.
+
+• Moved all git operations to new ChangeReviewService class
+• Implemented proper TypeScript interfaces for all data types
+• Added comprehensive error handling with user-friendly messages
+• Created progressive loading states (scanning → generating → complete)
+• Prepared codebase for future WebSocket real-time updates
+
+REMEMBER:
+- First line under 72 chars
+- All other lines under 80 chars
+- Blank line after first line
+- Brief intro explaining WHY
+- Bullet points with specific details
+- Write like you're helping future developers understand this change
+
+Write your commit message below:`;
 }
 
 // Helper function to generate executive summary prompt
