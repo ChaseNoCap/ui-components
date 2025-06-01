@@ -58,19 +58,11 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
-      // Add a small delay to ensure the executive summary is fully rendered
-      // before closing the loading modal
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       toast.success('Change review completed successfully!');
-      
-      // Use requestAnimationFrame to ensure React has rendered the data
-      await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
       toast.error(`Review failed: ${errorMessage}`);
-    } finally {
       setIsScanning(false);
       setScanProgress(null);
     }
@@ -238,6 +230,19 @@ export const ChangeReviewPage: React.FC = () => {
       startReview();
     }
   }, [hasInitialLoad, startReview]);
+
+  // Close loading modal only after report is rendered
+  useEffect(() => {
+    if (report && isScanning && scanProgress?.stage === 'complete') {
+      // Use RAF to ensure the DOM has updated
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsScanning(false);
+          setScanProgress(null);
+        });
+      });
+    }
+  }, [report, isScanning, scanProgress]);
 
   // Get status badge
   const getStatusBadge = (status: string) => {
