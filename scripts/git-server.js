@@ -7,6 +7,7 @@ import path from 'path';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -694,13 +695,21 @@ app.post('/api/git/commit', async (req, res) => {
       });
     }
     
-    // Add all changes (excluding submodules)
+    // Add all changes
     const files = statusOutput.split('\n').filter(line => line.trim());
     for (const fileLine of files) {
+      const status = fileLine.substring(0, 2).trim();
       const file = fileLine.substring(3);
-      // Skip submodule entries
-      if (!file.includes('packages/')) {
-        console.log(`Adding file: ${file}`);
+      
+      // Check if this is a submodule (modified submodule shows as 'M' with gitlink mode)
+      // We can detect submodules by checking if it's a directory in packages/
+      const fullPath = path.join(resolvedPath, file);
+      const isSubmodule = file.startsWith('packages/') && 
+                          fsSync.existsSync(fullPath) && 
+                          fsSync.statSync(fullPath).isDirectory();
+      
+      if (!isSubmodule) {
+        console.log(`Adding file: ${file} (status: ${status})`);
         await execGitCommand(resolvedPath, ['add', file]);
       } else {
         console.log(`Skipping submodule: ${file}`);
@@ -773,13 +782,21 @@ app.post('/api/git/batch-commit', async (req, res) => {
         continue;
       }
       
-      // Add all changes (excluding submodules)
+      // Add all changes
       const files = statusOutput.split('\n').filter(line => line.trim());
       for (const fileLine of files) {
+        const status = fileLine.substring(0, 2).trim();
         const file = fileLine.substring(3);
-        // Skip submodule entries
-        if (!file.includes('packages/')) {
-          console.log(`Adding file: ${file}`);
+        
+        // Check if this is a submodule (modified submodule shows as 'M' with gitlink mode)
+        // We can detect submodules by checking if it's a directory in packages/
+        const fullPath = path.join(resolvedPath, file);
+        const isSubmodule = file.startsWith('packages/') && 
+                            fsSync.existsSync(fullPath) && 
+                            fsSync.statSync(fullPath).isDirectory();
+        
+        if (!isSubmodule) {
+          console.log(`Adding file: ${file} (status: ${status})`);
           await execGitCommand(resolvedPath, ['add', file]);
         } else {
           console.log(`Skipping submodule: ${file}`);
