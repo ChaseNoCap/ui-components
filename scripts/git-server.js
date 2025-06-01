@@ -712,7 +712,9 @@ app.post('/api/git/commit', async (req, res) => {
         console.log(`Adding file: ${file} (status: ${status})`);
         await execGitCommand(resolvedPath, ['add', file]);
       } else {
-        console.log(`Skipping submodule: ${file}`);
+        console.log(`Adding submodule reference: ${file}`);
+        // For submodules, we need to add them differently
+        await execGitCommand(resolvedPath, ['add', file]);
       }
     }
     
@@ -799,7 +801,9 @@ app.post('/api/git/batch-commit', async (req, res) => {
           console.log(`Adding file: ${file} (status: ${status})`);
           await execGitCommand(resolvedPath, ['add', file]);
         } else {
-          console.log(`Skipping submodule: ${file}`);
+          console.log(`Adding submodule reference: ${file}`);
+          // For submodules, we need to add them differently
+          await execGitCommand(resolvedPath, ['add', file]);
         }
       }
       
