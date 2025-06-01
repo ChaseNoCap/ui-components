@@ -18,9 +18,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chasenocap/cache": "file:../../../../packages/cache",
-    "@chasenocap/github-graphql-client": "file:../../../../packages/github-graphql-client",
-    "@chasenocap/logger": "file:../../../../packages/logger",
     "@tanstack/react-query": "^5.17.19",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",

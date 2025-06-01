@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Change Review</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { TestChangeReview } from './src/TestChangeReview';
+      import './src/index.css';
+
+      ReactDOM.createRoot(document.getElementById('root')).render(
+        React.createElement(TestChangeReview)
+      );
+    </script>
+  </body>
+</html>

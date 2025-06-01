@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { HealthDashboard } from './components/HealthDashboard';
 import { PipelineControl } from './components/PipelineControl';
 import { Tools } from './pages/Tools';
+import { ChangeReviewPage } from './pages/ChangeReview';
 import { GitHubErrorBoundary } from './components/ErrorBoundary';
 import { ClaudeConsoleStandalone } from './pages/ClaudeConsoleStandalone';
 import { GitHubTokenBanner } from './components/TokenValidation';
@@ -45,6 +46,7 @@ const DashboardContent: React.FC = () => {
         <Route path="/" element={<HealthDashboard />} />
         <Route path="/pipelines" element={<PipelineControl />} />
         <Route path="/tools" element={<Tools />} />
+        <Route path="/tools/change-review" element={<ChangeReviewPage />} />
         <Route path="/tools/repository-status" element={<div>Repository Status - Coming Soon</div>} />
         <Route path="/tools/manual-commit" element={<div>Manual Commit - Coming Soon</div>} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />

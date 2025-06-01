@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inline React Test</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  </head>
+  <body>
+    <div id="root">
+      <p>Initial content - if you see this, React hasn't loaded</p>
+    </div>
+    
+    <script>
+      console.log('=== Inline test starting ===');
+      console.log('React available:', typeof React);
+      console.log('ReactDOM available:', typeof ReactDOM);
+      
+      const e = React.createElement;
+      
+      function TestApp() {
+        return e('div', { style: { padding: '20px', backgroundColor: '#f0f0f0' } }, [
+          e('h1', { key: 'h1' }, 'Inline React Test'),
+          e('p', { key: 'p1' }, 'If you can see this, React is working!'),
+          e('p', { key: 'p2' }, 'React version: ' + React.version),
+          e('button', { 
+            key: 'btn',
+            onClick: () => alert('Button clicked!'),
+            style: { 
+              padding: '10px 20px', 
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer'
+            }
+          }, 'Test Button')
+        ]);
+      }
+      
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(e(TestApp));
+      
+      console.log('React app rendered');
+    </script>
+  </body>
+</html>

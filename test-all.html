@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI Components Test Suite</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .test-links {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+      }
+      .test-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        background: #f9fafb;
+      }
+      .test-card h3 {
+        margin: 0 0 10px 0;
+        color: #1f2937;
+      }
+      .test-card p {
+        margin: 0 0 15px 0;
+        color: #6b7280;
+        font-size: 14px;
+      }
+      .test-card a {
+        display: inline-block;
+        background: #3b82f6;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .test-card a:hover {
+        background: #2563eb;
+      }
+      .status {
+        margin-top: 20px;
+        padding: 20px;
+        background: #f0f9ff;
+        border-radius: 8px;
+        border: 1px solid #bfdbfe;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🧪 UI Components Test Suite</h1>
+    
+    <div class="status">
+      <h2>📊 Current Status</h2>
+      <ul>
+        <li>✅ Static HTML is working</li>
+        <li>📡 Vite dev server is serving files on port <strong>3001</strong></li>
+        <li>🔗 Try these URLs:</li>
+      </ul>
+    </div>
+
+    <div class="test-links">
+      <div class="test-card">
+        <h3>🏠 Main React App</h3>
+        <p>The full application with all providers and routing</p>
+        <a href="http://localhost:3001/">Open Main App</a>
+      </div>
+
+      <div class="test-card">
+        <h3>🔍 Minimal App</h3>
+        <p>Bare minimum React app without providers</p>
+        <a href="http://localhost:3001/?minimal=true">Open Minimal App</a>
+      </div>
+
+      <div class="test-card">
+        <h3>📝 Simple App</h3>
+        <p>Simple app with basic routing</p>
+        <a href="http://localhost:3001/simple.html">Open Simple App</a>
+      </div>
+
+      <div class="test-card">
+        <h3>🐛 Debug App</h3>
+        <p>App with extensive console logging</p>
+        <a href="http://localhost:3001/debug.html">Open Debug App</a>
+      </div>
+
+      <div class="test-card">
+        <h3>✅ Basic Test</h3>
+        <p>Most basic React component test</p>
+        <a href="http://localhost:3001/test.html">Open Basic Test</a>
+      </div>
+
+      <div class="test-card">
+        <h3>📋 Change Review Direct</h3>
+        <p>Change Review page directly</p>
+        <a href="http://localhost:3001/tools/change-review">Open Change Review</a>
+      </div>
+    </div>
+
+    <div style="margin-top: 40px; padding: 20px; background: #fef3c7; border-radius: 8px;">
+      <h3>🔧 Debugging Tips:</h3>
+      <ol>
+        <li>Open browser Developer Tools (F12)</li>
+        <li>Check the Console tab for any JavaScript errors</li>
+        <li>Check the Network tab to ensure all files are loading</li>
+        <li>Look for any 404 errors or failed requests</li>
+        <li>Try clearing browser cache (Ctrl+Shift+R)</li>
+      </ol>
+    </div>
+
+    <script>
+      console.log('Test page loaded successfully');
+      
+      // Check if Vite is running
+      fetch('http://localhost:3001/')
+        .then(() => {
+          console.log('✅ Vite dev server is responding');
+        })
+        .catch(() => {
+          console.error('❌ Vite dev server is not responding');
+          alert('Vite dev server is not running! Run "npm run dev" first.');
+        });
+    </script>
+  </body>
+</html>

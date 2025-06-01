@@ -44,6 +44,10 @@ export const Navigation: React.FC = () => {
       icon: Wrench,
       dropdown: [
         {
+          label: 'Change Review',
+          path: '/tools/change-review',
+        },
+        {
           label: 'Claude Console',
           path: '/claude-console',
         },

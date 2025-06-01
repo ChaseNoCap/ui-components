@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diagnostic Test</title>
+    <style>
+      body { font-family: monospace; padding: 20px; }
+      .success { color: green; }
+      .error { color: red; }
+      .info { color: blue; }
+    </style>
+  </head>
+  <body>
+    <h1>UI Components Diagnostic</h1>
+    <div id="diagnostics"></div>
+    
+    <script type="module">
+      const log = (message, type = 'info') => {
+        const div = document.createElement('div');
+        div.className = type;
+        div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        document.getElementById('diagnostics').appendChild(div);
+        console.log(`[${type}] ${message}`);
+      };
+
+      log('Starting diagnostics...');
+      
+      // Test 1: Check if modules can be imported
+      try {
+        log('Test 1: Importing React...');
+        const { default: React } = await import('/node_modules/.vite/deps/react.js?v=c883a267');
+        log(`✅ React loaded: version ${React.version}`, 'success');
+      } catch (error) {
+        log(`❌ Failed to import React: ${error.message}`, 'error');
+      }
+
+      // Test 2: Check if ReactDOM can be imported
+      try {
+        log('Test 2: Importing ReactDOM...');
+        const { default: ReactDOM } = await import('/node_modules/.vite/deps/react-dom_client.js?v=1aa5ecf4');
+        log('✅ ReactDOM loaded successfully', 'success');
+      } catch (error) {
+        log(`❌ Failed to import ReactDOM: ${error.message}`, 'error');
+      }
+
+      // Test 3: Check if CSS loads
+      try {
+        log('Test 3: Loading CSS...');
+        await import('/src/index.css');
+        log('✅ CSS loaded successfully', 'success');
+      } catch (error) {
+        log(`❌ Failed to load CSS: ${error.message}`, 'error');
+      }
+
+      // Test 4: Check if a simple component can be imported
+      try {
+        log('Test 4: Importing BareMinimal component...');
+        const module = await import('/src/BareMinimal.tsx');
+        log('✅ Component imported successfully', 'success');
+        
+        // Test 5: Try to render it
+        log('Test 5: Rendering component...');
+        const React = (await import('/node_modules/.vite/deps/react.js?v=c883a267')).default;
+        const ReactDOM = (await import('/node_modules/.vite/deps/react-dom_client.js?v=1aa5ecf4')).default;
+        
+        const testDiv = document.createElement('div');
+        testDiv.id = 'test-root';
+        testDiv.style.marginTop = '20px';
+        testDiv.style.padding = '20px';
+        testDiv.style.border = '2px solid green';
+        document.body.appendChild(testDiv);
+        
+        const root = ReactDOM.createRoot(testDiv);
+        root.render(React.createElement(module.BareMinimal));
+        log('✅ Component rendered successfully!', 'success');
+      } catch (error) {
+        log(`❌ Failed to render component: ${error.message}`, 'error');
+        log(`Stack trace: ${error.stack}`, 'error');
+      }
+
+      // Test 6: Check console for errors
+      window.addEventListener('error', (event) => {
+        log(`❌ Global error: ${event.message} at ${event.filename}:${event.lineno}:${event.colno}`, 'error');
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        log(`❌ Unhandled promise rejection: ${event.reason}`, 'error');
+      });
+
+      log('Diagnostics complete. Check above for any errors.');
+    </script>
+  </body>
+</html>
