@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   changeReviewService, 
   ChangeReviewReport, 
@@ -19,7 +19,8 @@ import {
   CheckCircle2,
   XCircle,
   Edit2,
-  Send
+  Send,
+  RefreshCw
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from '../lib/toast';
@@ -32,6 +33,7 @@ export const ChangeReviewPage: React.FC = () => {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [editingMessages, setEditingMessages] = useState<Map<string, string>>(new Map());
   const [committingRepos, setCommittingRepos] = useState<Set<string>>(new Set());
+  const [hasInitialLoad, setHasInitialLoad] = useState(false);
 
   // Start comprehensive review
   const startReview = useCallback(async () => {
@@ -121,18 +123,18 @@ export const ChangeReviewPage: React.FC = () => {
     setCommittingRepos(prev => new Set(prev).add(repo.name));
 
     try {
-      // TODO: Implement actual git commit
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate
+      const result = await changeReviewService.commitRepository(
+        repo.path,
+        repo.generatedCommitMessage
+      );
       
-      toast.success(`Committed changes for ${repo.name}`);
-      
-      // Remove from report after successful commit
-      if (report) {
-        const updatedRepos = report.repositories.filter(r => r.name !== repo.name);
-        setReport({
-          ...report,
-          repositories: updatedRepos
-        });
+      if (result.success) {
+        toast.success(`Successfully committed changes for ${repo.name}`);
+        
+        // Refresh the report to reflect the committed changes
+        startReview();
+      } else {
+        toast.error(`Failed to commit ${repo.name}: ${result.error || 'Unknown error'}`);
       }
     } catch (err) {
       toast.error(`Failed to commit ${repo.name}: ${err}`);
@@ -143,7 +145,7 @@ export const ChangeReviewPage: React.FC = () => {
         return newSet;
       });
     }
-  }, [report]);
+  }, [startReview]);
 
   // Commit all repositories
   const commitAll = useCallback(async () => {
@@ -151,11 +153,52 @@ export const ChangeReviewPage: React.FC = () => {
     
     const reposToCommit = report.repositories.filter(r => r.hasChanges && r.generatedCommitMessage);
     
-    for (const repo of reposToCommit) {
-      await commitRepository(repo);
+    if (reposToCommit.length === 0) {
+      toast.error('No repositories with commit messages to commit');
+      return;
     }
-  }, [report, commitRepository]);
+    
+    // Set all repos as committing
+    reposToCommit.forEach(repo => {
+      setCommittingRepos(prev => new Set(prev).add(repo.name));
+    });
+    
+    try {
+      const commits = reposToCommit.map(repo => ({
+        repoPath: repo.path,
+        message: repo.generatedCommitMessage!
+      }));
+      
+      const result = await changeReviewService.batchCommit(commits);
+      
+      // Process results
+      result.results.forEach(res => {
+        if (res.success) {
+          toast.success(`Successfully committed ${res.repository}`);
+        } else {
+          toast.error(`Failed to commit ${res.repository}: ${res.error || 'Unknown error'}`);
+        }
+      });
+      
+      // Refresh the report to reflect the committed changes
+      if (result.results.some(res => res.success)) {
+        startReview();
+      }
+    } catch (err) {
+      toast.error(`Batch commit failed: ${err}`);
+    } finally {
+      // Clear all committing states
+      setCommittingRepos(new Set());
+    }
+  }, [report, startReview]);
 
+  // Load data on mount
+  useEffect(() => {
+    if (!hasInitialLoad) {
+      setHasInitialLoad(true);
+      startReview();
+    }
+  }, [hasInitialLoad, startReview]);
 
   // Get status badge
   const getStatusBadge = (status: string) => {
@@ -172,14 +215,29 @@ export const ChangeReviewPage: React.FC = () => {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Change Review</h1>
-        <p className="text-gray-600">
-          Comprehensive analysis of all uncommitted changes across repositories
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Change Review</h1>
+            <p className="text-gray-600">
+              Comprehensive analysis of all uncommitted changes across repositories
+            </p>
+          </div>
+          {report && (
+            <Button 
+              onClick={startReview} 
+              disabled={isScanning}
+              variant="outline"
+              size="sm"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isScanning ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Action Buttons */}
-      {!report && (
+      {/* Action Buttons - only show if initial load has completed */}
+      {!report && !isScanning && hasInitialLoad && (
         <Card className="mb-6">
           <CardContent className="pt-6">
             <Button 
@@ -296,22 +354,28 @@ export const ChangeReviewPage: React.FC = () => {
           {report.repositories.some(r => r.hasChanges) && (
             <Card className="mb-6">
               <CardContent className="pt-6">
-                <div className="flex gap-4">
-                  <Button onClick={commitAll} variant="default">
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Commit All Changes
-                  </Button>
-                  <Button onClick={startReview} variant="outline">
-                    Refresh Review
-                  </Button>
-                </div>
+                <Button onClick={commitAll} variant="default">
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Commit All Changes
+                </Button>
               </CardContent>
             </Card>
           )}
 
-          {/* Repository Cards */}
+          {/* Repository Cards - only show repos with changes */}
           <div className="space-y-4">
-            {report.repositories.map(repo => (
+            {report.repositories.filter(repo => repo.hasChanges || repo.error).length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">All repositories are clean!</h3>
+                  <p className="text-gray-600">No uncommitted changes found across any repositories.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              report.repositories
+                .filter(repo => repo.hasChanges || repo.error)
+                .map(repo => (
               <Card key={repo.name} className={repo.hasChanges ? '' : 'opacity-60'}>
                 <CardHeader 
                   className="cursor-pointer"
@@ -445,7 +509,7 @@ export const ChangeReviewPage: React.FC = () => {
                   </CardContent>
                 )}
               </Card>
-            ))}
+            )))}
           </div>
         </>
       )}

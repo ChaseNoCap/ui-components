@@ -467,6 +467,87 @@ export class ChangeReviewService {
       return [];
     }
   }
+
+  /**
+   * Commit changes in a single repository
+   */
+  async commitRepository(repoPath: string, message: string): Promise<{ success: boolean; output?: string; error?: string }> {
+    try {
+      const response = await fetch(`${this.apiUrl}/api/git/commit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          repoPath,
+          message
+        })
+      }).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to commit changes');
+      }
+      
+      return {
+        success: data.success,
+        output: data.output
+      };
+    } catch (error) {
+      console.error('Error committing repository:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Commit changes in multiple repositories
+   */
+  async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<{
+    success: boolean;
+    results: Array<{ repository: string; success: boolean; output?: string; error?: string }>
+  }> {
+    try {
+      const response = await fetch(`${this.apiUrl}/api/git/batch-commit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ commits })
+      }).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to batch commit');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Error batch committing:', error);
+      return {
+        success: false,
+        results: [{
+          repository: 'batch',
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }]
+      };
+    }
+  }
 }
 
 // Export singleton instance

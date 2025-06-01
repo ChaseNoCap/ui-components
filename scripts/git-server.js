@@ -28,20 +28,49 @@ app.use((req, _res, next) => {
 
 // Helper function to safely execute git commands
 async function execGitCommand(cwd, args) {
-  const command = `git ${args.join(' ')}`;
-  console.log(`Executing: ${command} in ${cwd}`);
+  // Handle special characters in arguments
+  const safeArgs = args.map(arg => {
+    // If the argument contains special characters and isn't already quoted, quote it
+    if (arg.includes('|') || arg.includes('%') || arg.includes(' ')) {
+      if (!arg.startsWith('"') && !arg.startsWith("'")) {
+        return arg; // Let the shell handle it naturally
+      }
+    }
+    return arg;
+  });
+  
+  console.log(`Executing: git ${safeArgs.join(' ')} in ${cwd}`);
   
   try {
-    const { stdout, stderr } = await execAsync(command, {
-      cwd,
-      maxBuffer: 1024 * 1024 * 10 // 10MB buffer
+    // Use spawn instead of exec for better argument handling
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', args, { cwd });
+      let stdout = '';
+      let stderr = '';
+      
+      git.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      git.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      git.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Git command failed: ${stderr || stdout}`));
+        } else {
+          if (stderr && !stderr.includes('warning:')) {
+            console.warn(`Git stderr: ${stderr}`);
+          }
+          resolve(stdout);
+        }
+      });
+      
+      git.on('error', (err) => {
+        reject(new Error(`Git command failed: ${err.message}`));
+      });
     });
-    
-    if (stderr && !stderr.includes('warning:')) {
-      console.warn(`Git stderr: ${stderr}`);
-    }
-    
-    return stdout;
   } catch (error) {
     console.error(`Git command failed: ${error.message}`);
     throw new Error(`Git command failed: ${error.message}`);
@@ -328,7 +357,7 @@ async function getDetailedRepoData(repoPath, repoName) {
   
   // Get recent commits
   const logOutput = await execGitCommand(repoPath, [
-    'log', '--oneline', '-10', '--pretty=format:%H|%s|%an|%ad', '--date=iso'
+    'log', '-10', '--pretty=format:%H|%s|%an|%ad', '--date=iso'
   ]);
   const recentCommits = logOutput
     .split('\n')
@@ -469,7 +498,7 @@ app.post('/api/claude/executive-summary', async (req, res) => {
 async function callClaude(prompt) {
   return new Promise((resolve, reject) => {
     const claudePath = process.env.CLAUDE_PATH || 'claude';
-    const args = ['--print', '--output-format', 'json'];
+    const args = ['--print'];
     
     const claude = spawn(claudePath, args);
     let output = '';
@@ -493,13 +522,15 @@ async function callClaude(prompt) {
         return;
       }
       
-      try {
-        const result = JSON.parse(output);
-        resolve(result.content || result.message || output);
-      } catch (error) {
-        // If not JSON, return raw output
-        resolve(output.trim());
-      }
+      // Extract just the message content from Claude's output
+      const lines = output.trim().split('\n');
+      // Filter out any JSON or metadata lines
+      const messageLines = lines.filter(line => {
+        const trimmed = line.trim();
+        return trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('"');
+      });
+      
+      resolve(messageLines.join('\n').trim());
     });
     
     claude.on('error', (error) => {
@@ -511,7 +542,7 @@ async function callClaude(prompt) {
 // Helper function to generate commit message prompt
 function generateCommitMessagePrompt(repo) {
   const recentCommits = repo.recentCommits
-    .slice(0, 5)
+    .slice(0, 10)
     .map(c => `- ${c.message}`)
     .join('\n');
     
@@ -519,26 +550,51 @@ function generateCommitMessagePrompt(repo) {
     .map(f => `${f.status} ${f.file}`)
     .join('\n');
     
-  return `Analyze the following git changes and generate a conventional commit message.
+  // Analyze the changes to provide context
+  const fileTypes = new Set();
+  const modifiedFiles = [];
+  const newFiles = [];
+  const deletedFiles = [];
+  
+  repo.gitStatus.forEach(f => {
+    const ext = f.file.split('.').pop();
+    fileTypes.add(ext);
+    
+    if (f.status === '??') newFiles.push(f.file);
+    else if (f.status === 'D') deletedFiles.push(f.file);
+    else modifiedFiles.push(f.file);
+  });
+    
+  return `Analyze the following git changes and generate a conventional commit message following the style of recent commits.
 
 Repository: ${repo.name}
 Branch: ${repo.branch}
 
-Recent commits for context (to understand commit style):
+Recent commits for style reference:
 ${recentCommits}
 
 Current changes:
 ${changes}
 
-${repo.gitDiff.staged ? `Staged diff:\n${repo.gitDiff.staged.substring(0, 5000)}\n` : ''}
-${repo.gitDiff.unstaged ? `Unstaged diff:\n${repo.gitDiff.unstaged.substring(0, 5000)}\n` : ''}
+Change summary:
+- ${newFiles.length} new files
+- ${modifiedFiles.length} modified files  
+- ${deletedFiles.length} deleted files
+- File types affected: ${Array.from(fileTypes).join(', ')}
 
-${repo.newFileContents ? `New file contents:\n${JSON.stringify(repo.newFileContents, null, 2).substring(0, 5000)}\n` : ''}
+${repo.gitDiff.staged ? `Staged diff (showing actual code changes):\n${repo.gitDiff.staged}\n` : ''}
+${repo.gitDiff.unstaged ? `Unstaged diff (showing actual code changes):\n${repo.gitDiff.unstaged}\n` : ''}
 
-Generate a commit message following conventional commit format (feat:, fix:, chore:, docs:, etc).
-Focus on the "why" not just the "what". Be concise but descriptive.
-DO NOT include any authorship information or sign-offs.
-Return only the commit message, nothing else.`;
+${repo.newFileContents && Object.keys(repo.newFileContents).length > 0 ? `New file contents:\n${Object.entries(repo.newFileContents).map(([file, content]) => `\n=== ${file} ===\n${content}`).join('\n')}\n` : ''}
+
+Instructions:
+1. Generate a commit message following conventional commit format (feat:, fix:, chore:, docs:, etc)
+2. Include specific details about what changed, similar to the recent commits shown above
+3. If the change is to fix something, explain what was fixed
+4. If adding features, briefly describe the feature
+5. For chore commits, be specific about what was updated/cleaned/refactored
+6. Keep it concise but informative (1-2 lines max)
+7. Return ONLY the commit message, no explanations or metadata`;
 }
 
 // Helper function to generate executive summary prompt
@@ -547,19 +603,19 @@ function generateExecutiveSummaryPrompt(commitMessages) {
     .map(cm => `- ${cm.repo}: ${cm.message}`)
     .join('\n');
     
-  return `Analyze the following commit messages from multiple repositories and create an executive summary.
+  return `Create an executive summary of the following proposed commits across multiple repositories.
 
-Commit Messages:
+Proposed commits:
 ${messages}
 
-Create a concise executive summary that:
-1. Identifies the main themes of changes across all repositories
-2. Highlights any cross-repository dependencies or impacts
-3. Categorizes changes by type (features, fixes, maintenance, etc.)
-4. Provides a high-level overview suitable for stakeholders
-5. Notes any potential risks or breaking changes
+Generate a brief executive summary that:
+1. Summarizes the overall changes being made
+2. Groups related changes together
+3. Highlights the most significant changes
+4. Uses clear, non-technical language where possible
 
-Format as 3-5 bullet points. Be concise and focus on the most important information.`;
+Format as 3-5 bullet points using markdown. Focus on the impact and purpose of changes.
+Return ONLY the bullet points, no introduction or explanations.`;
 }
 
 // Fallback commit message generation
@@ -607,12 +663,170 @@ function generateFallbackExecutiveSummary(commitMessages) {
   return summary.join('\n');
 }
 
+// Commit changes in a repository
+app.post('/api/git/commit', async (req, res) => {
+  const { repoPath, message } = req.body;
+  
+  console.log('Commit request received:', { repoPath, message });
+  
+  if (!repoPath || !message) {
+    return res.status(400).json({ error: 'Invalid request: repoPath and message required' });
+  }
+  
+  const resolvedPath = path.resolve(repoPath);
+  
+  // Security check
+  const basePath = path.resolve(path.join(__dirname, '../../..'));
+  if (!resolvedPath.startsWith(basePath)) {
+    return res.status(403).json({ error: 'Access denied: path outside of meta-gothic-framework' });
+  }
+  
+  try {
+    console.log(`Committing changes in ${resolvedPath} with message: ${message}`);
+    
+    // Check if there are any changes to commit
+    const statusOutput = await execGitCommand(resolvedPath, ['status', '--porcelain=v1']);
+    if (!statusOutput.trim()) {
+      return res.json({
+        success: false,
+        error: 'No changes to commit',
+        repository: path.basename(resolvedPath)
+      });
+    }
+    
+    // Add all changes (excluding submodules)
+    const files = statusOutput.split('\n').filter(line => line.trim());
+    for (const fileLine of files) {
+      const file = fileLine.substring(3);
+      // Skip submodule entries
+      if (!file.includes('packages/')) {
+        console.log(`Adding file: ${file}`);
+        await execGitCommand(resolvedPath, ['add', file]);
+      } else {
+        console.log(`Skipping submodule: ${file}`);
+      }
+    }
+    
+    // Check if we have anything staged
+    const stagedOutput = await execGitCommand(resolvedPath, ['diff', '--cached', '--name-only']);
+    if (!stagedOutput.trim()) {
+      return res.json({
+        success: false,
+        error: 'No changes staged for commit (submodules must be committed separately)',
+        repository: path.basename(resolvedPath)
+      });
+    }
+    
+    // Then commit with the message
+    const commitOutput = await execGitCommand(resolvedPath, ['commit', '-m', message]);
+    
+    res.json({
+      success: true,
+      output: commitOutput,
+      repository: path.basename(resolvedPath)
+    });
+  } catch (error) {
+    console.error('Commit error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Batch commit multiple repositories
+app.post('/api/git/batch-commit', async (req, res) => {
+  const { commits } = req.body;
+  
+  if (!commits || !Array.isArray(commits)) {
+    return res.status(400).json({ error: 'Invalid request: commits array required' });
+  }
+  
+  const results = [];
+  
+  for (const commit of commits) {
+    const { repoPath, message } = commit;
+    const resolvedPath = path.resolve(repoPath);
+    
+    // Security check
+    const basePath = path.resolve(path.join(__dirname, '../../..'));
+    if (!resolvedPath.startsWith(basePath)) {
+      results.push({
+        repository: path.basename(repoPath),
+        success: false,
+        error: 'Access denied: path outside of meta-gothic-framework'
+      });
+      continue;
+    }
+    
+    try {
+      console.log(`Committing changes in ${resolvedPath}`);
+      
+      // Check if there are any changes to commit
+      const statusOutput = await execGitCommand(resolvedPath, ['status', '--porcelain=v1']);
+      if (!statusOutput.trim()) {
+        results.push({
+          repository: path.basename(resolvedPath),
+          success: false,
+          error: 'No changes to commit'
+        });
+        continue;
+      }
+      
+      // Add all changes (excluding submodules)
+      const files = statusOutput.split('\n').filter(line => line.trim());
+      for (const fileLine of files) {
+        const file = fileLine.substring(3);
+        // Skip submodule entries
+        if (!file.includes('packages/')) {
+          console.log(`Adding file: ${file}`);
+          await execGitCommand(resolvedPath, ['add', file]);
+        } else {
+          console.log(`Skipping submodule: ${file}`);
+        }
+      }
+      
+      // Check if we have anything staged
+      const stagedOutput = await execGitCommand(resolvedPath, ['diff', '--cached', '--name-only']);
+      if (!stagedOutput.trim()) {
+        results.push({
+          repository: path.basename(resolvedPath),
+          success: false,
+          error: 'No changes staged for commit (submodules must be committed separately)'
+        });
+        continue;
+      }
+      
+      // Commit with the message
+      const commitOutput = await execGitCommand(resolvedPath, ['commit', '-m', message]);
+      
+      results.push({
+        repository: path.basename(resolvedPath),
+        success: true,
+        output: commitOutput
+      });
+    } catch (error) {
+      console.error(`Commit error for ${path.basename(resolvedPath)}:`, error);
+      results.push({
+        repository: path.basename(resolvedPath),
+        success: false,
+        error: error.message
+      });
+    }
+  }
+  
+  res.json({
+    success: results.every(r => r.success),
+    results
+  });
+});
+
 // Health check
 app.get('/api/git/health', (_req, res) => {
   res.json({ 
     status: 'ok', 
     version: '1.1.0',
-    features: ['git-operations', 'claude-integration']
+    features: ['git-operations', 'claude-integration', 'commit-management']
   });
 });
 
@@ -626,6 +840,8 @@ app.listen(PORT, () => {
   console.log('  GET  /api/git/scan-all-detailed - Deep scan with diffs and history');
   console.log('  GET  /api/git/submodules - List all git submodules');
   console.log('  GET  /api/git/repo-details/:path - Get detailed repository info');
+  console.log('  POST /api/git/commit - Commit changes in a repository');
+  console.log('  POST /api/git/batch-commit - Commit changes in multiple repositories');
   console.log('  POST /api/claude/batch-commit-messages - Generate AI commit messages');
   console.log('  POST /api/claude/executive-summary - Generate executive summary');
   console.log('  GET  /api/git/health - Health check');
