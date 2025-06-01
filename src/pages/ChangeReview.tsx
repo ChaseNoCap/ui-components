@@ -47,6 +47,9 @@ export const ChangeReviewPage: React.FC = () => {
         (progress) => setScanProgress(progress)
       );
       
+      // Set a rendering stage to show we're preparing the UI
+      setScanProgress({ stage: 'complete', message: 'Preparing results...' });
+      
       setReport(reviewReport);
       
       // Auto-expand repos with changes
@@ -55,7 +58,14 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
+      // Add a small delay to ensure the executive summary is fully rendered
+      // before closing the loading modal
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       toast.success('Change review completed successfully!');
+      
+      // Use requestAnimationFrame to ensure React has rendered the data
+      await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
