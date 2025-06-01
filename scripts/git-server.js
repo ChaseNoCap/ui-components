@@ -753,9 +753,21 @@ app.post('/api/git/batch-commit', async (req, res) => {
     return res.status(400).json({ error: 'Invalid request: commits array required' });
   }
   
+  // Sort commits to ensure submodules are committed before parent repos
+  const sortedCommits = [...commits].sort((a, b) => {
+    // If a is in packages/ and b is not, a comes first
+    if (a.repoPath.includes('/packages/') && !b.repoPath.includes('/packages/')) return -1;
+    // If b is in packages/ and a is not, b comes first
+    if (!a.repoPath.includes('/packages/') && b.repoPath.includes('/packages/')) return 1;
+    // Otherwise maintain original order
+    return 0;
+  });
+  
+  console.log('Sorted commits order:', sortedCommits.map(c => path.basename(c.repoPath)));
+  
   const results = [];
   
-  for (const commit of commits) {
+  for (const commit of sortedCommits) {
     const { repoPath, message } = commit;
     const resolvedPath = path.resolve(repoPath);
     
@@ -826,6 +838,25 @@ app.post('/api/git/batch-commit', async (req, res) => {
         success: true,
         output: commitOutput
       });
+      
+      // If we just committed a submodule, update the parent repo's git status
+      if (resolvedPath.includes('/packages/')) {
+        const parentPath = path.resolve(path.join(resolvedPath, '../..'));
+        console.log(`Submodule committed, checking parent repo at ${parentPath}`);
+        
+        // Check if parent has the submodule as a change
+        try {
+          const parentStatus = await execGitCommand(parentPath, ['status', '--porcelain=v1']);
+          const submoduleName = path.basename(resolvedPath);
+          const hasSubmoduleChange = parentStatus.includes(`packages/${submoduleName}`);
+          
+          if (hasSubmoduleChange) {
+            console.log(`Parent repo has submodule change for ${submoduleName}, will be included in next commit`);
+          }
+        } catch (e) {
+          console.log('Could not check parent status:', e.message);
+        }
+      }
     } catch (error) {
       console.error(`Commit error for ${path.basename(resolvedPath)}:`, error);
       results.push({
