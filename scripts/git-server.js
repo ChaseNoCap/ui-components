@@ -120,8 +120,8 @@ app.post('/api/git/status', async (req, res) => {
   try {
     console.log(`Getting git status for workspace: ${resolvedPath}`);
     
-    // Get status using porcelain format
-    const statusOutput = await execGitCommand(resolvedPath, ['status', '--porcelain=v1']);
+    // Get status using porcelain format - use -uall to show all untracked files
+    const statusOutput = await execGitCommand(resolvedPath, ['status', '--porcelain=v1', '-uall']);
     
     res.json({
       success: true,
@@ -343,15 +343,18 @@ async function getSubmodules(rootPath) {
 
 // Helper function to get detailed repository data
 async function getDetailedRepoData(repoPath, repoName) {
-  // Get git status
-  const statusOutput = await execGitCommand(repoPath, ['status', '--porcelain=v1']);
+  // Get git status - use -uall to show all untracked files individually
+  const statusOutput = await execGitCommand(repoPath, ['status', '--porcelain=v1', '-uall']);
+  console.log(`Git status for ${repoName}:`, statusOutput);
   const files = parseGitStatus(statusOutput);
+  console.log(`Parsed ${files.length} files for ${repoName}`);
   
   // Check if this is the meta repository and filter out submodule references
   const isMetaRepo = repoName === 'meta-gothic-framework';
   const filteredFiles = isMetaRepo 
     ? files.filter(f => !f.file.startsWith('packages/'))
     : files;
+  console.log(`After filtering: ${filteredFiles.length} files for ${repoName}`);
   
   // Track submodule changes separately for the meta repo
   const submoduleChanges = isMetaRepo 
