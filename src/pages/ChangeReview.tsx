@@ -20,7 +20,8 @@ import {
   XCircle,
   Edit2,
   Send,
-  RefreshCw
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from '../lib/toast';
@@ -114,10 +115,10 @@ export const ChangeReviewPage: React.FC = () => {
   }, [editingMessages, report]);
 
   // Commit changes for a repository
-  const commitRepository = useCallback(async (repo: RepositoryChangeData) => {
+  const commitRepository = useCallback(async (repo: RepositoryChangeData, shouldPush = false) => {
     if (!repo.generatedCommitMessage) {
       toast.error('No commit message available');
-      return;
+      return false;
     }
 
     setCommittingRepos(prev => new Set(prev).add(repo.name));
@@ -131,13 +132,24 @@ export const ChangeReviewPage: React.FC = () => {
       if (result.success) {
         toast.success(`Successfully committed changes for ${repo.name}`);
         
-        // Refresh the report to reflect the committed changes
-        startReview();
+        if (shouldPush) {
+          const pushResult = await changeReviewService.pushRepository(repo.path);
+          if (pushResult.success) {
+            toast.success(`Successfully pushed ${repo.name} to origin/${pushResult.branch}`);
+          } else {
+            toast.error(`Failed to push ${repo.name}: ${pushResult.error || 'Unknown error'}`);
+          }
+        }
+        
+        // Don't refresh immediately in batch operations
+        return true;
       } else {
         toast.error(`Failed to commit ${repo.name}: ${result.error || 'Unknown error'}`);
+        return false;
       }
     } catch (err) {
       toast.error(`Failed to commit ${repo.name}: ${err}`);
+      return false;
     } finally {
       setCommittingRepos(prev => {
         const newSet = new Set(prev);
@@ -145,10 +157,10 @@ export const ChangeReviewPage: React.FC = () => {
         return newSet;
       });
     }
-  }, [startReview]);
+  }, []);
 
   // Commit all repositories
-  const commitAll = useCallback(async () => {
+  const commitAll = useCallback(async (shouldPush = false) => {
     if (!report) return;
     
     const reposToCommit = report.repositories.filter(r => r.hasChanges && r.generatedCommitMessage);
@@ -172,13 +184,30 @@ export const ChangeReviewPage: React.FC = () => {
       const result = await changeReviewService.batchCommit(commits);
       
       // Process results
+      const successfulRepos: string[] = [];
       result.results.forEach(res => {
         if (res.success) {
           toast.success(`Successfully committed ${res.repository}`);
+          const repo = reposToCommit.find(r => r.name === res.repository);
+          if (repo) {
+            successfulRepos.push(repo.path);
+          }
         } else {
           toast.error(`Failed to commit ${res.repository}: ${res.error || 'Unknown error'}`);
         }
       });
+      
+      // Push if requested
+      if (shouldPush && successfulRepos.length > 0) {
+        const pushResult = await changeReviewService.batchPush(successfulRepos);
+        pushResult.results.forEach(res => {
+          if (res.success) {
+            toast.success(`Successfully pushed ${res.repository} to origin/${res.branch}`);
+          } else {
+            toast.error(`Failed to push ${res.repository}: ${res.error || 'Unknown error'}`);
+          }
+        });
+      }
       
       // Refresh the report to reflect the committed changes
       if (result.results.some(res => res.success)) {
@@ -354,10 +383,16 @@ export const ChangeReviewPage: React.FC = () => {
           {report.repositories.some(r => r.hasChanges) && (
             <Card className="mb-6">
               <CardContent className="pt-6">
-                <Button onClick={commitAll} variant="default">
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Commit All Changes
-                </Button>
+                <div className="flex gap-4">
+                  <Button onClick={() => commitAll(false)} variant="default">
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Commit All
+                  </Button>
+                  <Button onClick={() => commitAll(true)} variant="default">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Commit All & Push
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -479,7 +514,7 @@ export const ChangeReviewPage: React.FC = () => {
                         {/* Actions */}
                         <div className="flex gap-2">
                           <Button
-                            onClick={() => commitRepository(repo)}
+                            onClick={() => commitRepository(repo, false).then(() => startReview())}
                             disabled={committingRepos.has(repo.name) || !repo.generatedCommitMessage}
                           >
                             {committingRepos.has(repo.name) ? (
@@ -490,9 +525,17 @@ export const ChangeReviewPage: React.FC = () => {
                             ) : (
                               <>
                                 <Send className="mr-2 h-4 w-4" />
-                                Commit Changes
+                                Commit
                               </>
                             )}
+                          </Button>
+                          <Button
+                            onClick={() => commitRepository(repo, true).then(() => startReview())}
+                            disabled={committingRepos.has(repo.name) || !repo.generatedCommitMessage}
+                            variant="default"
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Commit & Push
                           </Button>
                           <Button variant="outline">
                             <XCircle className="mr-2 h-4 w-4" />

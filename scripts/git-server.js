@@ -842,12 +842,109 @@ app.post('/api/git/batch-commit', async (req, res) => {
   });
 });
 
+// Push changes in a repository
+app.post('/api/git/push', async (req, res) => {
+  const { repoPath } = req.body;
+  
+  if (!repoPath) {
+    return res.status(400).json({ error: 'Invalid request: repoPath required' });
+  }
+  
+  const resolvedPath = path.resolve(repoPath);
+  
+  // Security check
+  const basePath = path.resolve(path.join(__dirname, '../../..'));
+  if (!resolvedPath.startsWith(basePath)) {
+    return res.status(403).json({ error: 'Access denied: path outside of meta-gothic-framework' });
+  }
+  
+  try {
+    console.log(`Pushing changes in ${resolvedPath}`);
+    
+    // Get current branch
+    const branch = await execGitCommand(resolvedPath, ['branch', '--show-current']);
+    const currentBranch = branch.trim();
+    
+    // Push to origin
+    const pushOutput = await execGitCommand(resolvedPath, ['push', 'origin', currentBranch]);
+    
+    res.json({
+      success: true,
+      output: pushOutput,
+      repository: path.basename(resolvedPath),
+      branch: currentBranch
+    });
+  } catch (error) {
+    console.error('Push error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Batch push multiple repositories
+app.post('/api/git/batch-push', async (req, res) => {
+  const { repositories } = req.body;
+  
+  if (!repositories || !Array.isArray(repositories)) {
+    return res.status(400).json({ error: 'Invalid request: repositories array required' });
+  }
+  
+  const results = [];
+  
+  for (const repoPath of repositories) {
+    const resolvedPath = path.resolve(repoPath);
+    
+    // Security check
+    const basePath = path.resolve(path.join(__dirname, '../../..'));
+    if (!resolvedPath.startsWith(basePath)) {
+      results.push({
+        repository: path.basename(repoPath),
+        success: false,
+        error: 'Access denied: path outside of meta-gothic-framework'
+      });
+      continue;
+    }
+    
+    try {
+      console.log(`Pushing changes in ${resolvedPath}`);
+      
+      // Get current branch
+      const branch = await execGitCommand(resolvedPath, ['branch', '--show-current']);
+      const currentBranch = branch.trim();
+      
+      // Push to origin
+      const pushOutput = await execGitCommand(resolvedPath, ['push', 'origin', currentBranch]);
+      
+      results.push({
+        repository: path.basename(resolvedPath),
+        success: true,
+        output: pushOutput,
+        branch: currentBranch
+      });
+    } catch (error) {
+      console.error(`Push error for ${path.basename(resolvedPath)}:`, error);
+      results.push({
+        repository: path.basename(resolvedPath),
+        success: false,
+        error: error.message
+      });
+    }
+  }
+  
+  res.json({
+    success: results.every(r => r.success),
+    results
+  });
+});
+
 // Health check
 app.get('/api/git/health', (_req, res) => {
   res.json({ 
     status: 'ok', 
     version: '1.1.0',
-    features: ['git-operations', 'claude-integration', 'commit-management']
+    features: ['git-operations', 'claude-integration', 'commit-management', 'push-support']
   });
 });
 
@@ -863,6 +960,8 @@ app.listen(PORT, () => {
   console.log('  GET  /api/git/repo-details/:path - Get detailed repository info');
   console.log('  POST /api/git/commit - Commit changes in a repository');
   console.log('  POST /api/git/batch-commit - Commit changes in multiple repositories');
+  console.log('  POST /api/git/push - Push changes in a repository');
+  console.log('  POST /api/git/batch-push - Push changes in multiple repositories');
   console.log('  POST /api/claude/batch-commit-messages - Generate AI commit messages');
   console.log('  POST /api/claude/executive-summary - Generate executive summary');
   console.log('  GET  /api/git/health - Health check');

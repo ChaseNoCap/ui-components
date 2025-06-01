@@ -548,6 +548,85 @@ export class ChangeReviewService {
       };
     }
   }
+
+  /**
+   * Push changes in a single repository
+   */
+  async pushRepository(repoPath: string): Promise<{ success: boolean; output?: string; error?: string; branch?: string }> {
+    try {
+      const response = await fetch(`${this.apiUrl}/api/git/push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ repoPath })
+      }).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to push changes');
+      }
+      
+      return {
+        success: data.success,
+        output: data.output,
+        branch: data.branch
+      };
+    } catch (error) {
+      console.error('Error pushing repository:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Push changes in multiple repositories
+   */
+  async batchPush(repositories: string[]): Promise<{
+    success: boolean;
+    results: Array<{ repository: string; success: boolean; output?: string; error?: string; branch?: string }>
+  }> {
+    try {
+      const response = await fetch(`${this.apiUrl}/api/git/batch-push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ repositories })
+      }).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to batch push');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Error batch pushing:', error);
+      return {
+        success: false,
+        results: [{
+          repository: 'batch',
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }]
+      };
+    }
+  }
 }
 
 // Export singleton instance
