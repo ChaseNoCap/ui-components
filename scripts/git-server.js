@@ -201,7 +201,20 @@ app.get('/api/git/scan-all-detailed', async (_req, res) => {
             name: repo.name,
             path: repo.path,
             error: error.message,
-            hasChanges: false
+            hasChanges: false,
+            branch: { current: 'unknown', tracking: '' },
+            changes: [],
+            recentCommits: [],
+            gitDiff: { staged: '', unstaged: '' },
+            newFileContents: {},
+            statistics: {
+              totalFiles: 0,
+              stagedFiles: 0,
+              unstagedFiles: 0,
+              additions: 0,
+              modifications: 0,
+              deletions: 0
+            }
           };
         }
       })

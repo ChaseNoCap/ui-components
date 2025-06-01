@@ -107,9 +107,13 @@ export class ChangeReviewService {
         total: data.repositories.length
       });
 
-      // Ensure each repository has statistics property
+      // Ensure each repository has required properties
       return data.repositories.map((repo: any) => ({
         ...repo,
+        branch: repo.branch || {
+          current: 'unknown',
+          tracking: ''
+        },
         statistics: repo.statistics || {
           totalFiles: 0,
           stagedFiles: 0,
@@ -117,7 +121,11 @@ export class ChangeReviewService {
           additions: 0,
           modifications: 0,
           deletions: 0
-        }
+        },
+        changes: repo.changes || [],
+        recentCommits: repo.recentCommits || [],
+        gitDiff: repo.gitDiff || { staged: '', unstaged: '' },
+        newFileContents: repo.newFileContents || {}
       }));
     } catch (error) {
       console.error('Error scanning repositories:', error);
@@ -149,10 +157,14 @@ export class ChangeReviewService {
         throw new Error(data.error || 'Unknown error getting repository details');
       }
 
-      // Ensure repository has statistics property
+      // Ensure repository has all required properties
       const repository = data.repository;
       return {
         ...repository,
+        branch: repository.branch || {
+          current: 'unknown',
+          tracking: ''
+        },
         statistics: repository.statistics || {
           totalFiles: 0,
           stagedFiles: 0,
@@ -160,7 +172,11 @@ export class ChangeReviewService {
           additions: 0,
           modifications: 0,
           deletions: 0
-        }
+        },
+        changes: repository.changes || [],
+        recentCommits: repository.recentCommits || [],
+        gitDiff: repository.gitDiff || { staged: '', unstaged: '' },
+        newFileContents: repository.newFileContents || {}
       };
     } catch (error) {
       console.error('Error collecting repository data:', error);
@@ -198,7 +214,7 @@ export class ChangeReviewService {
         body: JSON.stringify({
           repositories: reposWithChanges.map(repo => ({
             name: repo.name,
-            branch: repo.branch.current,
+            branch: repo.branch?.current || 'unknown',
             recentCommits: repo.recentCommits.slice(0, 5),
             gitStatus: repo.changes,
             gitDiff: repo.gitDiff,

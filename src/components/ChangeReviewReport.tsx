@@ -63,7 +63,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
     report.repositories.forEach(repo => {
       if (repo.hasChanges) {
         lines.push(`### ${repo.name}`);
-        lines.push(`Branch: ${repo.branch.current}`);
+        lines.push(`Branch: ${repo.branch?.current || 'unknown'}`);
         lines.push(`Files Changed: ${repo.statistics?.totalFiles || 0}`);
         lines.push('');
         
@@ -247,7 +247,7 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
                     </td>
                     <td className="py-3">
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
-                        {repo.branch.current}
+                        {repo.branch?.current || 'unknown'}
                       </code>
                     </td>
                     <td className="text-center py-3">

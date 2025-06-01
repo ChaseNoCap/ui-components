@@ -331,7 +331,7 @@ export const ChangeReviewPage: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-600">
-                        {repo.branch.current}
+                        {repo.branch?.current || 'unknown'}
                       </span>
                       {repo.error && (
                         <AlertCircle className="h-4 w-4 text-red-500" />
