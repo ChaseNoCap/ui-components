@@ -15,6 +15,7 @@ import { Navigation } from './components/Navigation';
 import { TokenValidationProvider, useTokenValidation } from './contexts';
 import { ThemeProvider } from './context';
 import { ToastProvider } from './components/Toast';
+import Config from './pages/Config';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +30,20 @@ const DashboardContent: React.FC = () => {
   const { error, isValidating, retryValidation, dismissError, isDismissed } = useTokenValidation();
   
   const shouldShowBanner = error && !isDismissed;
+
+  // Handle keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Cmd+, or Ctrl+, to open config
+      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+        event.preventDefault();
+        window.location.href = '/config';
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -51,6 +66,7 @@ const DashboardContent: React.FC = () => {
         <Route path="/tools/change-review" element={<ChangeReviewPage />} />
         <Route path="/tools/repository-status" element={<RepositoryStatusPage />} />
         <Route path="/tools/manual-commit" element={<ManualCommitPage />} />
+        <Route path="/config" element={<Config />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
     </div>
