@@ -25,6 +25,7 @@ export const Navigation: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   // Navigation items configuration
@@ -231,8 +232,10 @@ export const Navigation: React.FC = () => {
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center">
             <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-md text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-              aria-label="Open menu"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileMenuOpen}
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -241,6 +244,84 @@ export const Navigation: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Mobile menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden">
+          <div className="px-2 pt-2 pb-3 space-y-1 bg-white dark:bg-gray-800 shadow-lg">
+            {navItems.map((item) => {
+              if (item.dropdown) {
+                return (
+                  <div key={item.label}>
+                    <button
+                      onClick={() => setOpenDropdown(openDropdown === item.label ? null : item.label)}
+                      className={clsx(
+                        'w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium transition-colors',
+                        isActiveDropdown(item)
+                          ? 'bg-gray-900 text-white dark:bg-gray-700'
+                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                      )}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <item.icon className="h-5 w-5" />
+                        <span>{item.label}</span>
+                      </div>
+                      <ChevronDown 
+                        className={clsx(
+                          'h-4 w-4 transition-transform',
+                          openDropdown === item.label && 'rotate-180'
+                        )} 
+                      />
+                    </button>
+                    {openDropdown === item.label && (
+                      <div className="pl-8 space-y-1 mt-1">
+                        {item.dropdown.map((dropItem) => (
+                          <NavLink
+                            key={dropItem.label}
+                            to={dropItem.path!}
+                            className={({ isActive }) =>
+                              clsx(
+                                'block px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                                isActive
+                                  ? 'bg-gray-800 text-white dark:bg-gray-600'
+                                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'
+                              )
+                            }
+                            onClick={() => {
+                              setMobileMenuOpen(false);
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            {dropItem.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <NavLink
+                  key={item.label}
+                  to={item.path!}
+                  className={({ isActive }) =>
+                    clsx(
+                      'flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-900 text-white dark:bg-gray-700'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                    )
+                  }
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </nav>
   );
 };

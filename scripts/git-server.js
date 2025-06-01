@@ -970,6 +970,205 @@ app.post('/api/git/batch-push', async (req, res) => {
   });
 });
 
+// Get all repositories with status
+app.get('/api/git/all-status', async (_req, res) => {
+  const metaRoot = path.join(__dirname, '../../..');
+  
+  try {
+    // Get all submodules
+    const submodules = await getSubmodules(metaRoot);
+    
+    // Add the meta repository itself
+    const allRepos = [
+      { name: 'meta-gothic-framework', path: metaRoot },
+      ...submodules
+    ];
+    
+    // Get status for all repositories
+    const results = await Promise.all(
+      allRepos.map(async (repo) => {
+        try {
+          // Get status
+          const statusOutput = await execGitCommand(repo.path, ['status', '--porcelain=v1']);
+          const hasChanges = statusOutput.trim().length > 0;
+          
+          // Get current branch
+          const branch = await execGitCommand(repo.path, ['branch', '--show-current']);
+          
+          // Get ahead/behind counts
+          let ahead = 0, behind = 0;
+          try {
+            const revListAhead = await execGitCommand(repo.path, ['rev-list', '--count', '@{u}..HEAD']);
+            const revListBehind = await execGitCommand(repo.path, ['rev-list', '--count', 'HEAD..@{u}']);
+            ahead = parseInt(revListAhead.trim()) || 0;
+            behind = parseInt(revListBehind.trim()) || 0;
+          } catch (e) {
+            // Remote might not exist
+          }
+          
+          // Get last commit
+          const lastCommitInfo = await execGitCommand(repo.path, [
+            'log', '-1', '--pretty=format:%H|%s|%an|%ad', '--date=iso'
+          ]);
+          const [hash, message, author, date] = lastCommitInfo.trim().split('|');
+          
+          // Count uncommitted changes
+          const uncommittedChanges = statusOutput.trim().split('\n').filter(line => line).length;
+          
+          return {
+            name: repo.name,
+            path: repo.path,
+            branch: branch.trim(),
+            status: hasChanges ? 'dirty' : 'clean',
+            ahead,
+            behind,
+            lastCommit: {
+              hash,
+              message,
+              author,
+              date
+            },
+            uncommittedChanges
+          };
+        } catch (error) {
+          return {
+            name: repo.name,
+            path: repo.path,
+            branch: 'unknown',
+            status: 'error',
+            ahead: 0,
+            behind: 0,
+            lastCommit: {
+              hash: '',
+              message: '',
+              author: '',
+              date: ''
+            },
+            uncommittedChanges: 0,
+            error: error.message
+          };
+        }
+      })
+    );
+    
+    res.json({
+      success: true,
+      repositories: results
+    });
+  } catch (error) {
+    console.error('Get all status error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Get list of repositories
+app.get('/api/git/repositories', async (_req, res) => {
+  const metaRoot = path.join(__dirname, '../../..');
+  
+  try {
+    // Get all submodules
+    const submodules = await getSubmodules(metaRoot);
+    
+    // Add the meta repository itself
+    const allRepos = [
+      { name: 'meta-gothic-framework', path: metaRoot },
+      ...submodules
+    ];
+    
+    // Check each repository for changes
+    const results = await Promise.all(
+      allRepos.map(async (repo) => {
+        try {
+          const statusOutput = await execGitCommand(repo.path, ['status', '--porcelain=v1']);
+          const hasChanges = statusOutput.trim().length > 0;
+          
+          return {
+            name: repo.name,
+            path: repo.path,
+            hasChanges
+          };
+        } catch (error) {
+          return {
+            name: repo.name,
+            path: repo.path,
+            hasChanges: false,
+            error: error.message
+          };
+        }
+      })
+    );
+    
+    res.json({
+      success: true,
+      repositories: results
+    });
+  } catch (error) {
+    console.error('Get repositories error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Get status for a specific repository (query param)
+app.get('/api/git/status', async (req, res) => {
+  const { path: repoPath } = req.query;
+  
+  if (!repoPath) {
+    return res.status(400).json({ error: 'Repository path required' });
+  }
+  
+  const resolvedPath = path.resolve(repoPath);
+  
+  // Security check
+  const basePath = path.resolve(path.join(__dirname, '../../..'));
+  if (!resolvedPath.startsWith(basePath)) {
+    return res.status(403).json({ error: 'Access denied: path outside of meta-gothic-framework' });
+  }
+  
+  try {
+    // Get status
+    const statusOutput = await execGitCommand(resolvedPath, ['status', '--porcelain=v1']);
+    
+    // Parse file changes
+    const files = statusOutput
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        const status = line.substring(0, 2);
+        const filePath = line.substring(3);
+        
+        // Map git status codes to our format
+        let changeType = 'modified';
+        if (status.includes('A') || status === '??') changeType = 'added';
+        if (status.includes('D')) changeType = 'deleted';
+        
+        return {
+          path: filePath,
+          status: changeType,
+          additions: 0, // Would need git diff to get these
+          deletions: 0
+        };
+      });
+    
+    res.json({
+      success: true,
+      files,
+      repository: path.basename(resolvedPath)
+    });
+  } catch (error) {
+    console.error('Get status error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // Health check
 app.get('/api/git/health', (_req, res) => {
   res.json({ 
@@ -985,8 +1184,11 @@ app.listen(PORT, () => {
   console.log('Available endpoints:');
   console.log('  POST /api/git/exec - Execute git command');
   console.log('  POST /api/git/status - Get git status for workspace');
+  console.log('  GET  /api/git/status - Get status for a specific repository');
   console.log('  GET  /api/git/scan-all - Scan all packages');
   console.log('  GET  /api/git/scan-all-detailed - Deep scan with diffs and history');
+  console.log('  GET  /api/git/all-status - Get status for all repositories');
+  console.log('  GET  /api/git/repositories - List all repositories');
   console.log('  GET  /api/git/submodules - List all git submodules');
   console.log('  GET  /api/git/repo-details/:path - Get detailed repository info');
   console.log('  POST /api/git/commit - Commit changes in a repository');
