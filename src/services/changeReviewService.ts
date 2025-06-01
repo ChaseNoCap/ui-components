@@ -82,7 +82,12 @@ export class ChangeReviewService {
         message: 'Scanning all repositories for changes...'
       });
 
-      const response = await fetch(`${this.apiUrl}/api/git/scan-all-detailed`);
+      const response = await fetch(`${this.apiUrl}/api/git/scan-all-detailed`).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
       
       if (!response.ok) {
         const error = await response.text();
@@ -115,7 +120,12 @@ export class ChangeReviewService {
   async collectRepositoryData(repoPath: string): Promise<RepositoryChangeData> {
     try {
       const encodedPath = encodeURIComponent(repoPath);
-      const response = await fetch(`${this.apiUrl}/api/git/repo-details/${encodedPath}`);
+      const response = await fetch(`${this.apiUrl}/api/git/repo-details/${encodedPath}`).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
       
       if (!response.ok) {
         const error = await response.text();
@@ -172,6 +182,11 @@ export class ChangeReviewService {
             newFileContents: repo.newFileContents
           }))
         })
+      }).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
       });
 
       if (!response.ok) {
@@ -239,6 +254,11 @@ export class ChangeReviewService {
             message: repo.generatedCommitMessage
           }))
         })
+      }).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
       });
 
       if (!response.ok) {
@@ -379,7 +399,12 @@ export class ChangeReviewService {
    */
   async getSubmodules(): Promise<Array<{ name: string; path: string; hash: string; ref: string }>> {
     try {
-      const response = await fetch(`${this.apiUrl}/api/git/submodules`);
+      const response = await fetch(`${this.apiUrl}/api/git/submodules`).catch((err) => {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
+        }
+        throw err;
+      });
       
       if (!response.ok) {
         throw new Error('Failed to get submodules');

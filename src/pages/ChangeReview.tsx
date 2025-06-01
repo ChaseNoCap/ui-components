@@ -156,17 +156,6 @@ export const ChangeReviewPage: React.FC = () => {
     }
   }, [report, commitRepository]);
 
-  // Get stage color
-  const getStageColor = (stage: string) => {
-    switch (stage) {
-      case 'scanning': return 'text-blue-600';
-      case 'analyzing': return 'text-purple-600';
-      case 'generating': return 'text-orange-600';
-      case 'summarizing': return 'text-green-600';
-      case 'complete': return 'text-green-700';
-      default: return 'text-gray-600';
-    }
-  };
 
   // Get status badge
   const getStatusBadge = (status: string) => {
@@ -211,13 +200,41 @@ export const ChangeReviewPage: React.FC = () => {
         <LoadingModal
           isOpen={true}
           title="Performing Change Review"
-          description={scanProgress.message}
-          progress={scanProgress.current && scanProgress.total 
-            ? (scanProgress.current / scanProgress.total) * 100 
-            : undefined
-          }
-          stage={scanProgress.stage}
-          stageColor={getStageColor(scanProgress.stage)}
+          stages={[
+            {
+              id: 'scanning',
+              label: 'Scanning Repositories',
+              status: scanProgress.stage === 'scanning' ? 'loading' : 
+                      scanProgress.stage === 'complete' || 
+                      ['analyzing', 'generating', 'summarizing'].includes(scanProgress.stage) ? 'success' : 'pending',
+              message: scanProgress.stage === 'scanning' ? scanProgress.message : undefined
+            },
+            {
+              id: 'analyzing',
+              label: 'Analyzing Changes',
+              status: scanProgress.stage === 'analyzing' ? 'loading' : 
+                      scanProgress.stage === 'complete' || 
+                      ['generating', 'summarizing'].includes(scanProgress.stage) ? 'success' : 'pending',
+              message: scanProgress.stage === 'analyzing' ? scanProgress.message : undefined
+            },
+            {
+              id: 'generating',
+              label: 'Generating Commit Messages',
+              status: scanProgress.stage === 'generating' ? 'loading' : 
+                      scanProgress.stage === 'complete' || 
+                      scanProgress.stage === 'summarizing' ? 'success' : 'pending',
+              message: scanProgress.stage === 'generating' ? scanProgress.message : undefined
+            },
+            {
+              id: 'summarizing',
+              label: 'Creating Executive Summary',
+              status: scanProgress.stage === 'summarizing' ? 'loading' : 
+                      scanProgress.stage === 'complete' ? 'success' : 'pending',
+              message: scanProgress.stage === 'summarizing' ? scanProgress.message : undefined
+            }
+          ]}
+          onClose={() => setIsScanning(false)}
+          allowClose={false}
         />
       )}
 
