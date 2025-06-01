@@ -347,6 +347,17 @@ async function getDetailedRepoData(repoPath, repoName) {
   const statusOutput = await execGitCommand(repoPath, ['status', '--porcelain=v1']);
   const files = parseGitStatus(statusOutput);
   
+  // Check if this is the meta repository and filter out submodule references
+  const isMetaRepo = repoName === 'meta-gothic-framework';
+  const filteredFiles = isMetaRepo 
+    ? files.filter(f => !f.file.startsWith('packages/'))
+    : files;
+  
+  // Track submodule changes separately for the meta repo
+  const submoduleChanges = isMetaRepo 
+    ? files.filter(f => f.file.startsWith('packages/'))
+    : [];
+  
   // Get current branch and tracking info
   const branch = await execGitCommand(repoPath, ['branch', '--show-current']);
   let trackingBranch = '';
@@ -368,20 +379,36 @@ async function getDetailedRepoData(repoPath, repoName) {
       return { hash: hash.substring(0, 7), message, author, date };
     });
   
-  // Get diffs if there are changes
+  // Get diffs if there are changes (only for non-submodule files)
   let stagedDiff = '';
   let unstagedDiff = '';
   
-  if (files.some(f => f.staged)) {
-    stagedDiff = await execGitCommand(repoPath, ['diff', '--cached']);
+  if (filteredFiles.some(f => f.staged)) {
+    if (isMetaRepo && submoduleChanges.length > 0) {
+      // For meta repo, exclude submodule paths from diff
+      const nonSubmoduleFiles = filteredFiles.filter(f => f.staged).map(f => f.file);
+      if (nonSubmoduleFiles.length > 0) {
+        stagedDiff = await execGitCommand(repoPath, ['diff', '--cached', '--', ...nonSubmoduleFiles]);
+      }
+    } else {
+      stagedDiff = await execGitCommand(repoPath, ['diff', '--cached']);
+    }
   }
   
-  if (files.some(f => !f.staged && f.status !== '??')) {
-    unstagedDiff = await execGitCommand(repoPath, ['diff']);
+  if (filteredFiles.some(f => !f.staged && f.status !== '??')) {
+    if (isMetaRepo && submoduleChanges.length > 0) {
+      // For meta repo, exclude submodule paths from diff
+      const nonSubmoduleFiles = filteredFiles.filter(f => !f.staged && f.status !== '??').map(f => f.file);
+      if (nonSubmoduleFiles.length > 0) {
+        unstagedDiff = await execGitCommand(repoPath, ['diff', '--', ...nonSubmoduleFiles]);
+      }
+    } else {
+      unstagedDiff = await execGitCommand(repoPath, ['diff']);
+    }
   }
   
-  // Get new file contents
-  const newFiles = files.filter(f => f.status === '??');
+  // Get new file contents (only for non-submodule files)
+  const newFiles = filteredFiles.filter(f => f.status === '??');
   const newFileContents = {};
   
   for (const file of newFiles.slice(0, 5)) { // Limit to 5 files to avoid huge payloads
@@ -402,8 +429,8 @@ async function getDetailedRepoData(repoPath, repoName) {
       current: branch.trim(),
       tracking: trackingBranch.trim()
     },
-    changes: files,
-    hasChanges: files.length > 0,
+    changes: filteredFiles,
+    hasChanges: filteredFiles.length > 0 || submoduleChanges.length > 0,
     recentCommits: recentCommits.slice(0, 5), // Limit to 5 commits
     gitDiff: {
       staged: stagedDiff.substring(0, 100000), // Increased limit for better context
@@ -411,13 +438,19 @@ async function getDetailedRepoData(repoPath, repoName) {
     },
     newFileContents,
     statistics: {
-      totalFiles: files.length,
-      stagedFiles: files.filter(f => f.staged).length,
-      unstagedFiles: files.filter(f => !f.staged).length,
-      additions: files.filter(f => f.status === '??').length,
-      modifications: files.filter(f => f.status === 'M' || f.status === 'MM').length,
-      deletions: files.filter(f => f.status === 'D').length
-    }
+      totalFiles: filteredFiles.length,
+      totalFilesWithSubmodules: files.length, // Include submodule count
+      stagedFiles: filteredFiles.filter(f => f.staged).length,
+      unstagedFiles: filteredFiles.filter(f => !f.staged).length,
+      additions: filteredFiles.filter(f => f.status === '??').length,
+      modifications: filteredFiles.filter(f => f.status === 'M' || f.status === 'MM').length,
+      deletions: filteredFiles.filter(f => f.status === 'D').length,
+      hiddenSubmoduleChanges: submoduleChanges.length
+    },
+    // Store submodule changes separately (not shown in UI but used for auto-commit)
+    _submoduleChanges: submoduleChanges,
+    // Add a flag to indicate submodule changes are hidden
+    hasHiddenSubmoduleChanges: submoduleChanges.length > 0
   };
 }
 
@@ -523,11 +556,35 @@ async function callClaude(prompt) {
         return;
       }
       
-      // Extract just the message content from Claude's output
+      // Extract just the commit message, filtering out analysis text
       const lines = output.trim().split('\n');
-      // Filter out any JSON or metadata lines
-      const messageLines = lines.filter(line => {
+      
+      // Find where the actual commit message starts
+      let messageStartIndex = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        // Skip lines that are clearly not part of the commit message
+        if (line.startsWith('Now let me') || 
+            line.startsWith('Let me analyze') ||
+            line.startsWith('Based on') ||
+            line.startsWith('Looking at') ||
+            line.startsWith('I see') ||
+            line.startsWith('I\'ll') ||
+            line.startsWith('Here\'s') ||
+            line.includes('commit message:') ||
+            line === '') {
+          messageStartIndex = i + 1;
+        } else if (line.match(/^(feat|fix|chore|docs|style|refactor|test|perf)(\(.+?\))?:/)) {
+          // Found the start of a conventional commit message
+          messageStartIndex = i;
+          break;
+        }
+      }
+      
+      // Extract just the commit message part
+      const messageLines = lines.slice(messageStartIndex).filter(line => {
         const trimmed = line.trim();
+        // Skip JSON, metadata, or trailing analysis
         return trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('"');
       });
       
@@ -640,68 +697,90 @@ ${content}
 `).join('\n')}
 ` : ''}
 
-Write a commit message following these STRICT rules:
+CRITICAL INSTRUCTIONS FOR COMMIT MESSAGE:
 
-1. First line: type(scope): concise summary (MUST be under 72 chars)
-   - Be specific but brief - save details for bullet points
-   - No period at the end
+1. ANALYZE THE CODE DEEPLY:
+   - Read EVERY line of the diff to understand what changed
+   - Identify the PURPOSE - what problem does this solve?
+   - Find the VALUE - what can users/devs do now that they couldn't?
+   - Note KEY TECHNICAL DECISIONS in the implementation
 
-2. Second line: BLANK (required by git)
+2. FORMAT REQUIREMENTS (STRICT 80 CHAR LINE LIMIT):
+   
+   type(scope): clear, specific summary under 72 chars
+   
+   Brief explanation of WHY this change was needed (1-2 lines).
+   Each line MUST be under 80 characters - wrap longer lines.
+   
+   • First bullet: Most important change/feature/fix
+   • Second bullet: Key implementation detail or approach
+   • Third bullet: User/developer impact or benefit
+   • Fourth bullet: Any breaking changes or things to note
+   • Fifth bullet: (optional) Performance impact or next steps
 
-3. Third line onward: Brief intro (1-2 lines max, each under 80 chars)
-   explaining WHY this change was needed
+3. WRITING STYLE:
+   - Write like you're explaining to a teammate who will maintain this
+   - Be SPECIFIC: mention actual function names, components, endpoints
+   - Focus on VALUE: what does this enable? what problem does it solve?
+   - Keep it TIGHT: every word should add meaning
+   - Make it SCANNABLE: bullets should each be one complete thought
 
-4. Then bullet points with key details:
-   • Each bullet point starts with "• " (bullet + space)
-   • Each line MUST be under 80 characters (wrap if needed)
-   • Include specific function names, components, files
-   • Explain what changed and why it matters
-   • 3-5 bullet points is ideal
+4. ANALYZE THESE CODE ASPECTS:
+   - New functions/components added
+   - Modified behavior in existing code
+   - UI/UX improvements
+   - Performance optimizations
+   - Security enhancements
+   - Developer experience improvements
+   - Breaking changes or migrations needed
 
-Examples of PROPERLY FORMATTED commit messages:
+EXAMPLES showing proper analysis and formatting:
 
-feat(navigation): add Tools dropdown menu for better organization
+feat(ui): add submodule change filtering with toggle visibility
 
-The Tools page was becoming unwieldy with too many features. Created a
-dropdown menu to organize repository management tools more effectively.
+The meta repo was cluttered with submodule reference changes that are
+just admin noise. Now we hide them by default but keep accurate counts.
 
-• Added dropdown with Repository Status, Manual Commit, Change Review
-• Implemented mobile-responsive behavior with touch support
-• Used click-outside detection and proper ARIA labels for a11y
-• Integrated with existing routing - all paths under /tools/*
-• Fixed theme context issues in Tools components
+• Filter packages/* changes from meta repo, store in _submoduleChanges
+• Show accurate counts: "5 files (+2 submodule refs)" in badges
+• Add toggle button to show/hide submodule changes on demand
+• Auto-commit parent repo when submodules change via new helper
+• Preserve all changes internally for proper git operations
 
-fix(git-server): prevent path traversal vulnerability in git operations
+fix(claude): strip analysis text from commit messages
 
-Critical security issue where paths could escape project root. This could
-have allowed access to system files outside the meta-gothic-framework.
+Claude was prefixing commit messages with "Now let me analyze..." and
+similar phrases. Users want just the commit message, not the thinking.
 
-• Added path.resolve() + startsWith() validation on all endpoints
-• Reject any paths that try to escape meta-gothic-framework root
-• Fixed submodule detection treating regular directories as submodules
-• Increased diff size limits from 50KB to 100KB for large refactors
-• Added proper error messages for path validation failures
+• Enhanced callClaude() to detect and skip analysis preambles
+• Look for conventional commit format (feat/fix/etc) as start marker
+• Filter lines starting with "Now let me", "Based on", "I'll", etc
+• Preserve multi-line commit messages with proper formatting
+• Tested with various Claude response formats for robustness
 
-refactor(changeReview): extract git operations to dedicated service
+refactor(git-server): improve diff handling for hidden files
 
-The ChangeReview component had too many responsibilities, making it hard
-to test and maintain. Separated concerns for better architecture.
+Submodule diffs were polluting the context sent to Claude, making
+commit messages less focused on actual code changes.
 
-• Moved all git operations to new ChangeReviewService class
-• Implemented proper TypeScript interfaces for all data types
-• Added comprehensive error handling with user-friendly messages
-• Created progressive loading states (scanning → generating → complete)
-• Prepared codebase for future WebSocket real-time updates
+• Split diff generation to exclude submodule paths when filtered
+• Use git diff -- <files> syntax to target specific paths only
+• Maintain separate counts for UI (filtered) vs git (actual) files
+• Reduce diff size in prompts by ~30% for meta repo commits
+• No change to actual git operations - only affects UI/prompts
 
-REMEMBER:
-- First line under 72 chars
-- All other lines under 80 chars
-- Blank line after first line
-- Brief intro explaining WHY
-- Bullet points with specific details
-- Write like you're helping future developers understand this change
+Now analyze the ACTUAL CODE CHANGES below and write a commit message:
 
-Write your commit message below:`;
+Diff content to analyze:
+${repo.gitDiff.staged || ''}
+${repo.gitDiff.unstaged || ''}
+
+New files:
+${Object.entries(repo.newFileContents || {}).map(([f, c]) => `${f}:\n${c}`).join('\n')}
+
+Changed files: ${changes}
+
+Write your commit message below (no explanations):`;
 }
 
 // Helper function to generate executive summary prompt
@@ -865,6 +944,16 @@ app.post('/api/git/commit', async (req, res) => {
       output: commitOutput,
       repository: path.basename(resolvedPath)
     });
+    
+    // Auto-commit parent repo if we just committed a submodule
+    if (resolvedPath.includes('/packages/')) {
+      console.log('Checking if parent repo needs auto-commit...');
+      const autoCommitResult = await autoCommitParentSubmoduleChanges(resolvedPath);
+      
+      if (autoCommitResult.committed) {
+        console.log('Parent repo auto-committed successfully');
+      }
+    }
   } catch (error) {
     console.error('Commit error:', error);
     res.status(500).json({ 
@@ -873,6 +962,42 @@ app.post('/api/git/commit', async (req, res) => {
     });
   }
 });
+
+// Helper function to auto-commit parent repo submodule changes
+async function autoCommitParentSubmoduleChanges(submodulePath) {
+  const metaRoot = path.resolve(path.join(__dirname, '../../..'));
+  const submoduleName = path.basename(submodulePath);
+  
+  try {
+    // Check if parent repo has submodule changes
+    const statusOutput = await execGitCommand(metaRoot, ['status', '--porcelain=v1']);
+    const submoduleChanges = statusOutput
+      .split('\n')
+      .filter(line => line.trim() && line.includes(`packages/${submoduleName}`));
+    
+    if (submoduleChanges.length === 0) {
+      console.log('No submodule reference changes in parent repo');
+      return { success: true, committed: false };
+    }
+    
+    // Add the submodule reference change
+    await execGitCommand(metaRoot, ['add', `packages/${submoduleName}`]);
+    
+    // Create auto-commit message
+    const autoCommitMessage = `chore: update ${submoduleName} submodule reference
+
+Auto-committed after changes to ${submoduleName} submodule`;
+    
+    // Commit the change
+    await execGitCommand(metaRoot, ['commit', '-m', autoCommitMessage]);
+    
+    console.log(`Auto-committed parent repo submodule reference for ${submoduleName}`);
+    return { success: true, committed: true, message: autoCommitMessage };
+  } catch (error) {
+    console.error('Failed to auto-commit parent submodule changes:', error);
+    return { success: false, error: error.message };
+  }
+}
 
 // Batch commit multiple repositories
 app.post('/api/git/batch-commit', async (req, res) => {
@@ -895,6 +1020,7 @@ app.post('/api/git/batch-commit', async (req, res) => {
   console.log('Sorted commits order:', sortedCommits.map(c => path.basename(c.repoPath)));
   
   const results = [];
+  const committedSubmodules = [];
   
   for (const commit of sortedCommits) {
     const { repoPath, message } = commit;
@@ -968,23 +1094,9 @@ app.post('/api/git/batch-commit', async (req, res) => {
         output: commitOutput
       });
       
-      // If we just committed a submodule, update the parent repo's git status
+      // Track committed submodules
       if (resolvedPath.includes('/packages/')) {
-        const parentPath = path.resolve(path.join(resolvedPath, '../..'));
-        console.log(`Submodule committed, checking parent repo at ${parentPath}`);
-        
-        // Check if parent has the submodule as a change
-        try {
-          const parentStatus = await execGitCommand(parentPath, ['status', '--porcelain=v1']);
-          const submoduleName = path.basename(resolvedPath);
-          const hasSubmoduleChange = parentStatus.includes(`packages/${submoduleName}`);
-          
-          if (hasSubmoduleChange) {
-            console.log(`Parent repo has submodule change for ${submoduleName}, will be included in next commit`);
-          }
-        } catch (e) {
-          console.log('Could not check parent status:', e.message);
-        }
+        committedSubmodules.push(resolvedPath);
       }
     } catch (error) {
       console.error(`Commit error for ${path.basename(resolvedPath)}:`, error);
@@ -992,6 +1104,21 @@ app.post('/api/git/batch-commit', async (req, res) => {
         repository: path.basename(resolvedPath),
         success: false,
         error: error.message
+      });
+    }
+  }
+  
+  // After all commits, auto-commit parent repo if any submodules were committed
+  if (committedSubmodules.length > 0) {
+    console.log(`Auto-committing parent repo for ${committedSubmodules.length} submodule changes`);
+    const autoCommitResult = await autoCommitParentSubmoduleChanges(committedSubmodules[0]);
+    
+    if (autoCommitResult.committed) {
+      results.push({
+        repository: 'meta-gothic-framework',
+        success: true,
+        output: `Auto-committed submodule references: ${autoCommitResult.message}`,
+        autoCommit: true
       });
     }
   }
@@ -1090,6 +1217,34 @@ app.post('/api/git/batch-push', async (req, res) => {
         success: false,
         error: error.message
       });
+    }
+  }
+  
+  // Check if we need to push the parent repo too (if it was auto-committed)
+  const hasSubmodulePushes = repositories.some(repo => repo.includes('/packages/'));
+  if (hasSubmodulePushes) {
+    const metaRoot = path.resolve(path.join(__dirname, '../../..'));
+    
+    try {
+      // Check if parent repo has commits to push
+      const status = await execGitCommand(metaRoot, ['status', '-sb']);
+      if (status.includes('ahead')) {
+        console.log('Parent repo has commits to push, pushing...');
+        
+        const branch = await execGitCommand(metaRoot, ['branch', '--show-current']);
+        const currentBranch = branch.trim();
+        const pushOutput = await execGitCommand(metaRoot, ['push', 'origin', currentBranch]);
+        
+        results.push({
+          repository: 'meta-gothic-framework',
+          success: true,
+          output: pushOutput,
+          branch: currentBranch,
+          autoCommit: true
+        });
+      }
+    } catch (error) {
+      console.log('Could not push parent repo:', error.message);
     }
   }
   

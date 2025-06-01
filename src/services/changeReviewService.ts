@@ -32,14 +32,18 @@ export interface RepositoryChangeData {
   newFileContents: Record<string, string>;
   statistics: {
     totalFiles: number;
+    totalFilesWithSubmodules?: number;
     stagedFiles: number;
     unstagedFiles: number;
     additions: number;
     modifications: number;
     deletions: number;
+    hiddenSubmoduleChanges?: number;
   };
   generatedCommitMessage?: string;
   error?: string;
+  hasHiddenSubmoduleChanges?: boolean;
+  _submoduleChanges?: FileChange[];
 }
 
 export interface ChangeReviewReport {

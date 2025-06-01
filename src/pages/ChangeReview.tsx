@@ -35,6 +35,7 @@ export const ChangeReviewPage: React.FC = () => {
   const [editingMessages, setEditingMessages] = useState<Map<string, string>>(new Map());
   const [committingRepos, setCommittingRepos] = useState<Set<string>>(new Set());
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
+  const [showSubmoduleChanges, setShowSubmoduleChanges] = useState<Map<string, boolean>>(new Map());
 
   // Start comprehensive review
   const startReview = useCallback(async () => {
@@ -359,8 +360,20 @@ export const ChangeReviewPage: React.FC = () => {
               {/* Statistics */}
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
-                  <div className="text-2xl font-bold">{report.statistics?.totalFiles || 0}</div>
-                  <div className="text-sm text-gray-600">Total Files</div>
+                  <div className="text-2xl font-bold">
+                    {(() => {
+                      const baseCount = report.statistics?.totalFiles || 0;
+                      const submoduleCount = report.repositories.reduce((sum, r) => 
+                        sum + (r.statistics?.hiddenSubmoduleChanges || 0), 0);
+                      return submoduleCount > 0 ? `${baseCount}+${submoduleCount}` : baseCount;
+                    })()}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Total Files
+                    {report.repositories.some(r => r.hasHiddenSubmoduleChanges) && (
+                      <span className="block text-xs text-gray-500">(+submodule refs)</span>
+                    )}
+                  </div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
@@ -430,7 +443,10 @@ export const ChangeReviewPage: React.FC = () => {
                       )}
                       <CardTitle className="text-lg">{repo.name}</CardTitle>
                       <Badge variant={repo.hasChanges ? 'default' : 'secondary'}>
-                        {repo.statistics?.totalFiles || 0} files
+                        {repo.hasHiddenSubmoduleChanges && repo.statistics?.hiddenSubmoduleChanges ? 
+                          `${repo.statistics.totalFiles} files (+${repo.statistics.hiddenSubmoduleChanges} submodule ref${repo.statistics.hiddenSubmoduleChanges > 1 ? 's' : ''})` :
+                          `${repo.statistics?.totalFiles || 0} files`
+                        }
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2">
@@ -466,6 +482,31 @@ export const ChangeReviewPage: React.FC = () => {
                               </div>
                             ))}
                           </div>
+                          {repo.hasHiddenSubmoduleChanges && (
+                            <div className="mt-2">
+                              <button
+                                onClick={() => setShowSubmoduleChanges(prev => 
+                                  new Map(prev).set(repo.name, !prev.get(repo.name))
+                                )}
+                                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                              >
+                                {showSubmoduleChanges.get(repo.name) ? 'Hide' : 'Show'} submodule reference changes
+                              </button>
+                              {showSubmoduleChanges.get(repo.name) && repo._submoduleChanges && (
+                                <div className="mt-2 pl-4 border-l-2 border-gray-300 dark:border-gray-600">
+                                  <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    Submodule references (auto-committed):
+                                  </div>
+                                  {repo._submoduleChanges.map((change: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 text-sm text-gray-500">
+                                      {getStatusBadge(change.status)}
+                                      <span className="font-mono">{change.file}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Commit Message */}
