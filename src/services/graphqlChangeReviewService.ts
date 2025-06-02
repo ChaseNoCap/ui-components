@@ -474,7 +474,7 @@ export class GraphQLChangeReviewService {
     this.log(`📊 Analyzing ${reposWithMessages.length} repositories to create executive summary...`, 'info');
     
     if (reposWithMessages.length === 0) {
-      this.log('⚠️ No repositories have generated commit messages - skipping executive summary', 'error');
+      this.log('✅ No messages to summarize', 'info');
       
       // Mark summarizing as complete even when no repos
       onProgress?.({ 
