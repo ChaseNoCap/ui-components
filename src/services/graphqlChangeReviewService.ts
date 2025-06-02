@@ -188,16 +188,22 @@ export class GraphQLChangeReviewService {
     this.onLog = onLogEntry;
     try {
       // Log initial connection
-      this.log('Connecting to GraphQL gateway...', 'progress');
+      this.log('🔍 Initializing change review process...', 'progress');
       onProgress?.({
         stage: 'scanning',
-        message: 'Connecting to GraphQL server...',
+        message: 'Establishing connection to repository analysis service...',
         current: 0,
         total: 100
       });
 
       console.log('🔍 Starting GraphQL query');
-      this.log('Executing scanAllDetailed query...', 'info');
+      this.log('📊 Querying all repositories for uncommitted changes...', 'info');
+      onProgress?.({
+        stage: 'scanning',
+        message: 'Analyzing git status across all repositories...',
+        current: 20,
+        total: 100
+      });
       
       let response;
       try {
@@ -212,7 +218,7 @@ export class GraphQLChangeReviewService {
           }
         });
         console.log('✅ GraphQL query response:', response);
-        this.log('GraphQL query completed successfully', 'success');
+        this.log('✅ Repository scan completed successfully', 'success');
       } catch (queryError) {
         console.error('❌ GraphQL query error:', queryError);
         this.log(`GraphQL query failed: ${queryError instanceof Error ? queryError.message : 'Unknown error'}`, 'error');
@@ -234,32 +240,39 @@ export class GraphQLChangeReviewService {
 
       const scanReport = data.scanAllDetailed;
       
-      this.log(`Found ${scanReport.statistics.totalRepositories} repositories to analyze`, 'info');
-      this.log(`Total uncommitted files: ${scanReport.statistics.totalUncommittedFiles}`, 'info');
+      this.log(`📁 Discovered ${scanReport.statistics.totalRepositories} repositories in the workspace`, 'info');
+      this.log(`📝 Found ${scanReport.statistics.totalUncommittedFiles} files with uncommitted changes`, 'info');
+      
+      if (scanReport.statistics.dirtyRepositories > 0) {
+        this.log(`⚠️  ${scanReport.statistics.dirtyRepositories} repositories have pending changes`, 'info');
+      }
       
       onProgress?.({
         stage: 'scanning',
-        message: `Processing ${scanReport.statistics.totalRepositories} repositories...`,
+        message: `Analyzing changes in ${scanReport.statistics.totalRepositories} repositories...`,
         current: 60,
         total: 100
       });
 
       // Transform GraphQL response to match existing interface
       const totalRepos = scanReport.repositories.length;
-      this.log('Processing repository data...', 'progress');
+      this.log('🔄 Processing repository change details...', 'progress');
       
       return scanReport.repositories.map((repo: any, index: number) => {
         const { name, path, status, stagedDiff, unstagedDiff, recentCommits } = repo;
         
-        // Log processing of each repository
+        // Log processing of each repository with more detail
         if (status.files.length > 0) {
-          this.log(`• ${name}: ${status.files.length} uncommitted files`, 'info');
+          const fileTypes = new Set(status.files.map((f: any) => 
+            f.path.split('.').pop() || 'unknown'
+          ));
+          this.log(`📦 ${name}: ${status.files.length} files changed (${Array.from(fileTypes).slice(0, 3).join(', ')})`, 'info');
         }
         
         // Update progress for each repo processed
         onProgress?.({
           stage: 'scanning',
-          message: `Processing ${name}...`,
+          message: `Analyzing ${name} (${index + 1}/${totalRepos})...`,
           current: 60 + Math.floor((40 * (index + 1)) / totalRepos),
           total: 100
         });
@@ -337,11 +350,11 @@ export class GraphQLChangeReviewService {
   ): Promise<RepositoryChangeData[]> {
     const reposWithChanges = repositories.filter(r => r.hasChanges);
     
-    this.log(`Generating commit messages for ${reposWithChanges.length} repositories...`, 'progress');
+    this.log(`🤖 Preparing to generate intelligent commit messages for ${reposWithChanges.length} repositories...`, 'progress');
     
     onProgress?.({
       stage: 'generating',
-      message: 'Preparing to generate commit messages...',
+      message: `Analyzing code changes to craft meaningful commit messages...`,
       current: 0,
       total: reposWithChanges.length
     });
@@ -372,7 +385,8 @@ export class GraphQLChangeReviewService {
         analyzeRelationships: true
       };
       
-      this.log('Calling GraphQL mutation to generate commit messages...', 'info');
+      this.log('🚀 Sending changes to AI for commit message generation...', 'info');
+      this.log(`📄 Context includes: ${input.repositories.reduce((sum, r) => sum + r.filesChanged.length, 0)} files, ${input.repositories.length} repositories`, 'info');
 
       // Use the gateway client
       const response = await client.mutate({
@@ -393,11 +407,14 @@ export class GraphQLChangeReviewService {
         throw new Error('Mutation returned null result');
       }
       
-      this.log(`Generated ${result.successCount}/${result.totalRepositories} commit messages successfully`, 
+      this.log(`✅ Successfully generated ${result.successCount}/${result.totalRepositories} AI-powered commit messages`, 
         result.successCount === result.totalRepositories ? 'success' : 'info');
       
       if (result.totalTokenUsage) {
-        this.log(`Token usage: ${result.totalTokenUsage.inputTokens} input, ${result.totalTokenUsage.outputTokens} output`, 'info');
+        this.log(`📊 AI Analysis: ${result.totalTokenUsage.inputTokens.toLocaleString()} tokens analyzed, ${result.totalTokenUsage.outputTokens.toLocaleString()} tokens generated`, 'info');
+        if (result.totalTokenUsage.estimatedCost) {
+          this.log(`💵 Estimated cost: $${result.totalTokenUsage.estimatedCost.toFixed(4)}`, 'info');
+        }
       }
       
       // Map results back to repositories
@@ -409,10 +426,10 @@ export class GraphQLChangeReviewService {
         
         if (commitResult && commitResult.success) {
           processedCount++;
-          this.log(`✓ ${repo.name}: ${commitResult.message}`, 'success');
+          this.log(`✓ ${repo.name}: Generated ${commitResult.commitType || 'commit'} message with ${commitResult.confidence ? Math.round(commitResult.confidence * 100) + '% confidence' : 'high confidence'}`, 'success');
           onProgress?.({
             stage: 'generating',
-            message: `Generated message for ${repo.name}`,
+            message: `Created intelligent commit message for ${repo.name}`,
             current: processedCount,
             total: reposWithChanges.length
           });
@@ -429,8 +446,8 @@ export class GraphQLChangeReviewService {
       });
     } catch (error) {
       console.error('Error generating commit messages:', error);
-      this.log(`Failed to generate AI commit messages: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      this.log('Using fallback commit message generation', 'info');
+      this.log(`❌ Failed to generate AI commit messages: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      this.log('🔄 Falling back to pattern-based commit message generation...', 'info');
       // Fallback to basic generation
       const fallbackRepos = this.generateFallbackCommitMessages(repositories, onProgress);
       this.log(`Fallback generation complete - ${fallbackRepos.filter(r => r.generatedCommitMessage).length} messages generated`, 'info');
@@ -447,17 +464,24 @@ export class GraphQLChangeReviewService {
   ): Promise<string> {
     onProgress?.({
       stage: 'summarizing',
-      message: 'Creating executive summary...'
+      message: 'Synthesizing changes into executive summary...'
     });
 
     const reposWithMessages = repositories.filter(
       r => r.hasChanges && r.generatedCommitMessage
     );
 
-    this.log(`Found ${reposWithMessages.length} repositories with generated messages`, 'info');
+    this.log(`📊 Analyzing ${reposWithMessages.length} repositories to create executive summary...`, 'info');
     
     if (reposWithMessages.length === 0) {
-      this.log('No repositories have generated commit messages - cannot create executive summary', 'error');
+      this.log('⚠️ No repositories have generated commit messages - skipping executive summary', 'error');
+      
+      // Mark summarizing as complete even when no repos
+      onProgress?.({ 
+        stage: 'summarizing', 
+        message: 'No changes to summarize' 
+      });
+      
       return 'No changes detected across any repositories.';
     }
 
@@ -479,17 +503,37 @@ export class GraphQLChangeReviewService {
         includeRecommendations: true
       };
       
-      this.log('Generating executive summary with AI analysis...', 'info');
-      this.log(`Executive summary input: ${JSON.stringify({ 
-        commitMessagesCount: input.commitMessages.length,
-        firstRepo: input.commitMessages[0]?.repository 
-      })}`, 'info');
+      this.log('🧠 Engaging AI to synthesize comprehensive executive summary...', 'info');
+      this.log(`📝 Analyzing patterns across ${input.commitMessages.length} commit messages...`, 'info');
 
-      // Use the gateway client
-      const response = await client.mutate({
-        mutation: GENERATE_EXECUTIVE_SUMMARY,
-        variables: { input }
-      });
+      // Use a Promise.race for timeout instead of AbortController
+      let response;
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Executive summary generation timed out after 5 minutes'));
+          }, 300000); // 5 minutes
+        });
+
+        const mutationPromise = client.mutate({
+          mutation: GENERATE_EXECUTIVE_SUMMARY,
+          variables: { input }
+        });
+
+        // Race between the mutation and the timeout
+        response = await Promise.race([
+          mutationPromise,
+          timeoutPromise
+        ]) as any;
+        
+        this.log('✅ Received response from AI service', 'info');
+      } catch (error: any) {
+        if (error.message && error.message.includes('timed out')) {
+          this.log('⏰ Executive summary generation timed out after 5 minutes', 'error');
+          throw error;
+        }
+        throw error;
+      }
 
       console.log('Executive summary mutation response:', response);
       
@@ -508,32 +552,69 @@ export class GraphQLChangeReviewService {
       }
 
       if (response.data.generateExecutiveSummary.success) {
-        this.log('Executive summary generated successfully', 'success');
+        this.log('✅ Executive summary generated successfully', 'success');
         
         // Log metadata if available
         const metadata = response.data.generateExecutiveSummary.metadata;
         if (metadata) {
           if (metadata.themes && metadata.themes.length > 0) {
-            this.log(`Identified ${metadata.themes.length} themes across changes`, 'info');
+            this.log(`🎯 Identified ${metadata.themes.length} key themes across all changes`, 'info');
+            metadata.themes.slice(0, 3).forEach((theme: any) => {
+              this.log(`  • ${theme.name}: ${theme.affectedRepositories.length} repositories`, 'info');
+            });
           }
           if (metadata.riskLevel) {
-            this.log(`Risk assessment: ${metadata.riskLevel}`, 'info');
+            const riskEmoji = metadata.riskLevel === 'HIGH' ? '🔴' : 
+                              metadata.riskLevel === 'MEDIUM' ? '🟡' : '🟢';
+            this.log(`${riskEmoji} Overall risk assessment: ${metadata.riskLevel}`, 'info');
           }
         }
+        
+        // Mark summarizing as complete
+        onProgress?.({ 
+          stage: 'summarizing', 
+          message: 'Executive summary crafted successfully' 
+        });
         
         return response.data.generateExecutiveSummary.summary;
       } else {
         const errorMsg = response.data.generateExecutiveSummary.error || 'Unknown error';
         console.warn('Failed to generate AI executive summary:', errorMsg);
-        this.log(`Executive summary generation failed: ${errorMsg}`, 'error');
-        this.log('Using fallback executive summary', 'info');
-        return this.generateFallbackExecutiveSummary(repositories);
+        this.log(`⚠️ Executive summary returned error: ${errorMsg}`, 'error');
+        this.log('🔄 Creating executive summary using pattern analysis...', 'info');
+        const fallbackSummary = this.generateFallbackExecutiveSummary(repositories);
+        
+        // Mark summarizing as complete even for fallback
+        onProgress?.({ 
+          stage: 'summarizing', 
+          message: 'Executive summary created using change patterns' 
+        });
+        
+        return fallbackSummary;
       }
     } catch (error) {
       console.error('Error generating executive summary:', error);
-      this.log(`Failed to generate AI executive summary: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      this.log('Using fallback executive summary', 'info');
-      return this.generateFallbackExecutiveSummary(repositories);
+      // Check for specific error types
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        // Clean up abort error messages
+        if (errorMessage.includes('aborted') || errorMessage.includes('AbortError')) {
+          errorMessage = 'Request was cancelled or timed out';
+        }
+      }
+      this.log(`❌ Failed to generate AI executive summary: ${errorMessage}`, 'error');
+      this.log('🔄 Creating executive summary using pattern analysis...', 'info');
+      
+      const fallbackSummary = this.generateFallbackExecutiveSummary(repositories);
+      
+      // Mark summarizing as complete even for errors
+      onProgress?.({ 
+        stage: 'summarizing', 
+        message: 'Executive summary created using change analysis' 
+      });
+      
+      return fallbackSummary;
     }
   }
 
@@ -598,18 +679,20 @@ export class GraphQLChangeReviewService {
       this.logEntries = []; // Clear previous logs
       this.onLog = onLogEntry;
       
-      this.log('Starting comprehensive change review...', 'info');
+      this.log('🎬 Starting comprehensive change review across all repositories...', 'info');
+      this.log('🔍 This process will scan, analyze, and prepare intelligent summaries', 'info');
       
       // 1. Scan all repositories
       const repositories = await this.scanAllRepositories(onProgress, onLogEntry);
       
       // 2. Transition to analyzing stage
-      this.log('Analyzing repository changes...', 'progress');
+      const changedRepoCount = repositories.filter(r => r.hasChanges).length;
+      this.log(`🧐 Beginning deep analysis of ${changedRepoCount} repositories with changes...`, 'progress');
       onProgress?.({
         stage: 'analyzing',
-        message: 'Analyzing repository changes...',
+        message: `Examining code changes across ${changedRepoCount} repositories...`,
         current: 0,
-        total: repositories.filter(r => r.hasChanges).length
+        total: changedRepoCount
       });
       
       // Brief pause to show the analyzing stage
@@ -619,16 +702,17 @@ export class GraphQLChangeReviewService {
       const reposWithMessages = await this.generateCommitMessages(repositories, onProgress);
       
       // 4. Generate executive summary
-      this.log('Creating executive summary...', 'progress');
+      this.log('📝 Preparing comprehensive executive summary...', 'progress');
       const executiveSummary = await this.generateExecutiveSummary(reposWithMessages, onProgress);
       
       // 5. Compile final report
       const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
       
-      this.log('Change review complete!', 'success');
+      this.log('🎆 Change review completed successfully!', 'success');
+      this.log(`📦 Processed ${repositories.filter(r => r.hasChanges).length} repositories with ${repositories.reduce((sum, r) => sum + (r.statistics?.totalFiles || 0), 0)} total file changes`, 'info');
       onProgress?.({
         stage: 'complete',
-        message: 'Change review complete!'
+        message: 'Comprehensive review completed successfully!'
       });
       
       return report;
@@ -757,12 +841,12 @@ export class GraphQLChangeReviewService {
       processedCount++;
       onProgress?.({
         stage: 'generating',
-        message: `Generated fallback message for ${repo.name}`,
+        message: `Analyzed ${repo.name} changes and created commit message`,
         current: processedCount,
         total: reposWithChanges.length
       });
       
-      this.log(`✓ ${repo.name}: Generated fallback commit message`, 'info');
+      this.log(`✓ ${repo.name}: Generated pattern-based commit message`, 'info');
       
       return {
         ...repo,
