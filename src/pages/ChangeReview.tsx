@@ -28,8 +28,9 @@ import {
   Layers
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
+import { useGitOperationCompletion } from '../hooks/useGitOperationCompletion';
 import { toast } from '../lib/toast';
-import { Switch } from '../components/ui/switch';
+// import { Switch } from '../components/ui/switch'; // Unused import
 import { Label } from '../components/ui/label';
 
 // Feature flag for GraphQL
@@ -45,6 +46,7 @@ export const ChangeReviewPage: React.FC = () => {
   const [committingRepos, setCommittingRepos] = useState<Set<string>>(new Set());
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
   const [showSubmoduleChanges, setShowSubmoduleChanges] = useState<Map<string, boolean>>(new Map());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [apiMode, setApiMode] = useState<'rest' | 'graphql' | 'graphql-parallel'>(
     USE_GRAPHQL ? 'graphql' : 'rest'
   );
@@ -54,6 +56,29 @@ export const ChangeReviewPage: React.FC = () => {
     apiMode === 'graphql-parallel' ? graphqlParallelChangeReviewService :
     apiMode === 'graphql' ? graphqlChangeReviewService : 
     changeReviewService;
+
+  // Create a ref to store the startReview function
+  const startReviewRef = React.useRef<() => Promise<void>>();
+
+  // Use the git operation completion hook - defined after reviewService to avoid circular dependency
+  const { 
+    waitForCommitCompletion, 
+    waitForBatchCompletion,
+    getLatestCommitHash,
+    isWaiting 
+  } = useGitOperationCompletion({
+    onComplete: () => {
+      // Refresh the review when operations complete
+      if (startReviewRef.current) {
+        startReviewRef.current();
+      }
+      setIsRefreshing(false);
+    },
+    onError: (error) => {
+      toast.error(`Git operation failed: ${error.message}`);
+      setIsRefreshing(false);
+    }
+  });
 
   // Start comprehensive review
   const startReview = useCallback(async () => {
@@ -89,8 +114,14 @@ export const ChangeReviewPage: React.FC = () => {
       toast.error(`Review failed: ${errorMessage}`);
       setIsScanning(false);
       setScanProgress(null);
+      setIsRefreshing(false);
     }
   }, [reviewService, apiMode]);
+
+  // Update the ref whenever startReview changes
+  React.useEffect(() => {
+    startReviewRef.current = startReview;
+  }, [startReview]);
 
   // Toggle repository expansion
   const toggleRepo = useCallback((repoName: string) => {
@@ -150,7 +181,11 @@ export const ChangeReviewPage: React.FC = () => {
     setCommittingRepos(prev => new Set(prev).add(repo.name));
 
     try {
-      const result = await changeReviewService.commitRepository(
+      // Get the current commit hash before committing
+      const previousHash = await getLatestCommitHash(repo.path);
+      console.log(`[ChangeReview] Single commit - captured hash for ${repo.name}: ${previousHash}`);
+      
+      const result = await reviewService.commitRepository(
         repo.path,
         repo.generatedCommitMessage
       );
@@ -159,7 +194,7 @@ export const ChangeReviewPage: React.FC = () => {
         toast.success(`Successfully committed changes for ${repo.name}`);
         
         if (shouldPush) {
-          const pushResult = await changeReviewService.pushRepository(repo.path);
+          const pushResult = await reviewService.pushRepository(repo.path);
           if (pushResult.success) {
             toast.success(`Successfully pushed ${repo.name} to origin/${pushResult.branch}`);
           } else {
@@ -167,7 +202,10 @@ export const ChangeReviewPage: React.FC = () => {
           }
         }
         
-        // Don't refresh immediately in batch operations
+        // Wait for the commit to complete properly instead of using arbitrary delay
+        setIsRefreshing(true);
+        await waitForCommitCompletion(repo.path, previousHash || undefined);
+        
         return true;
       } else {
         toast.error(`Failed to commit ${repo.name}: ${result.error || 'Unknown error'}`);
@@ -183,7 +221,7 @@ export const ChangeReviewPage: React.FC = () => {
         return newSet;
       });
     }
-  }, []);
+  }, [getLatestCommitHash, waitForCommitCompletion]);
 
   // Commit all repositories
   const commitAll = useCallback(async (shouldPush = false) => {
@@ -202,6 +240,19 @@ export const ChangeReviewPage: React.FC = () => {
     });
     
     try {
+      // Get current commit hashes before committing
+      const repoHashes = await Promise.all(
+        reposToCommit.map(async repo => ({
+          repo,
+          previousHash: await getLatestCommitHash(repo.path)
+        }))
+      );
+      
+      console.log('[ChangeReview] Captured commit hashes:', repoHashes.map(rh => ({
+        repo: rh.repo.name,
+        hash: rh.previousHash
+      })));
+      
       const commits = reposToCommit.map(repo => ({
         repoPath: repo.path,
         message: repo.generatedCommitMessage!
@@ -237,7 +288,21 @@ export const ChangeReviewPage: React.FC = () => {
       
       // Refresh the report to reflect the committed changes
       if (result.results.some(res => res.success)) {
-        startReview();
+        // Wait for all successful commits to complete properly
+        setIsRefreshing(true);
+        const successfulCommits = result.results
+          .filter(res => res.success)
+          .map(res => {
+            const repoHash = repoHashes.find(rh => rh.repo.name === res.repository);
+            return repoHash ? { 
+              path: repoHash.repo.path, 
+              previousCommitHash: repoHash.previousHash ?? undefined 
+            } : null;
+          })
+          .filter(Boolean) as Array<{ path: string; previousCommitHash?: string }>;
+        
+        await waitForBatchCompletion(successfulCommits);
+        // The onComplete callback in the hook will handle refreshing
       }
     } catch (err) {
       toast.error(`Batch commit failed: ${err}`);
@@ -245,7 +310,7 @@ export const ChangeReviewPage: React.FC = () => {
       // Clear all committing states
       setCommittingRepos(new Set());
     }
-  }, [report, startReview]);
+  }, [report, startReview, getLatestCommitHash, waitForBatchCompletion]);
 
   // Load data on mount
   useEffect(() => {
@@ -321,11 +386,11 @@ export const ChangeReviewPage: React.FC = () => {
             {report && (
               <Button 
                 onClick={startReview} 
-                disabled={isScanning}
+                disabled={isScanning || isRefreshing}
                 variant="outline"
                 size="sm"
               >
-                <RefreshCw className={`mr-2 h-4 w-4 ${isScanning ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`mr-2 h-4 w-4 ${(isScanning || isRefreshing) ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
             )}
@@ -348,6 +413,21 @@ export const ChangeReviewPage: React.FC = () => {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Status Indicators */}
+      {isRefreshing && (
+        <div className="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Refreshing data...
+        </div>
+      )}
+      
+      {isWaiting && !isRefreshing && (
+        <div className="fixed top-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Verifying git operations...
+        </div>
       )}
 
       {/* Loading Modal */}
@@ -622,7 +702,7 @@ export const ChangeReviewPage: React.FC = () => {
                         {/* Actions */}
                         <div className="flex gap-2">
                           <Button
-                            onClick={() => commitRepository(repo, false).then(() => startReview())}
+                            onClick={() => commitRepository(repo, false)}
                             disabled={committingRepos.has(repo.name) || !repo.generatedCommitMessage}
                           >
                             {committingRepos.has(repo.name) ? (
@@ -638,7 +718,7 @@ export const ChangeReviewPage: React.FC = () => {
                             )}
                           </Button>
                           <Button
-                            onClick={() => commitRepository(repo, true).then(() => startReview())}
+                            onClick={() => commitRepository(repo, true)}
                             disabled={committingRepos.has(repo.name) || !repo.generatedCommitMessage}
                             variant="default"
                           >

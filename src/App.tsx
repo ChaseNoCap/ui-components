@@ -15,8 +15,11 @@ import { Navigation } from './components/Navigation';
 import { TokenValidationProvider, useTokenValidation } from './contexts';
 import { ThemeProvider } from './context';
 import { ToastProvider } from './components/Toast';
+import { GraphQLProvider } from './providers/GraphQLProvider';
 import Config from './pages/Config';
 import AgentStatus from './pages/AgentStatus';
+import { GraphQLDebug } from './components/GraphQLDebug';
+import './utils/test-graphql'; // Load test utilities
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -71,6 +74,7 @@ const DashboardContent: React.FC = () => {
         <Route path="/agent-status" element={<AgentStatus />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
+      <GraphQLDebug />
     </div>
   );
 };
@@ -80,14 +84,16 @@ export const App: React.FC = () => {
     <GitHubErrorBoundary>
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
-          <TokenValidationProvider>
-            <ToastProvider position="top-right">
-              <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-                <DashboardContent />
-                <ReactQueryDevtools initialIsOpen={false} />
-              </Router>
-            </ToastProvider>
-          </TokenValidationProvider>
+          <GraphQLProvider>
+            <TokenValidationProvider>
+              <ToastProvider position="top-right">
+                <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+                  <DashboardContent />
+                  <ReactQueryDevtools initialIsOpen={false} />
+                </Router>
+              </ToastProvider>
+            </TokenValidationProvider>
+          </GraphQLProvider>
         </QueryClientProvider>
       </ThemeProvider>
     </GitHubErrorBoundary>

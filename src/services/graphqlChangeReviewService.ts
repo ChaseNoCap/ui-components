@@ -1,5 +1,5 @@
 import { gql } from '@apollo/client';
-import { client } from './apolloClient'; // We'll need to create this
+import { apolloClient as client } from '../lib/apollo-client';
 import type { 
   ChangeReviewReport, 
   RepositoryChangeData, 
@@ -10,57 +10,53 @@ import type {
 const SCAN_ALL_DETAILED = gql`
   query ScanAllDetailed {
     scanAllDetailed {
-      timestamp
-      totalRepositories
-      dirtyRepositories
       repositories {
-        repository {
-          name
-          path
-          status {
-            branch
-            trackingBranch
-            files {
-              path
-              status
-              statusDescription
-              isStaged
-              additions
-              deletions
-            }
-            isDirty
-            changeCount
+        name
+        path
+        status {
+          branch
+          isDirty
+          ahead
+          behind
+          hasRemote
+          files {
+            path
+            status
+            statusDescription
+            isStaged
           }
-          isSubmodule
-          packageInfo {
-            name
-            version
-            description
-            private
+          stashes {
+            index
+            message
+            timestamp
           }
         }
         stagedDiff
         unstagedDiff
         recentCommits {
           hash
-          abbrevHash
           message
           author
           authorEmail
           timestamp
-          filesChanged
         }
-        stashes {
-          index
-          message
-          timestamp
+        remotes {
+          name
+          fetchUrl
+          pushUrl
+        }
+        config {
+          defaultBranch
+          isBare
+          isShallow
         }
       }
       statistics {
-        totalFiles
+        totalRepositories
+        dirtyRepositories
+        totalUncommittedFiles
         totalAdditions
         totalDeletions
-        affectedPackages
         changesByType {
           modified
           added
@@ -68,6 +64,12 @@ const SCAN_ALL_DETAILED = gql`
           renamed
           untracked
         }
+      }
+      metadata {
+        startTime
+        endTime
+        duration
+        workspaceRoot
       }
     }
   }
@@ -157,66 +159,123 @@ export class GraphQLChangeReviewService {
     onProgress?: (progress: ScanProgress) => void
   ): Promise<RepositoryChangeData[]> {
     try {
+      // Start with initial progress
       onProgress?.({
         stage: 'scanning',
-        message: 'Scanning all repositories for changes...'
+        message: 'Connecting to GraphQL server...',
+        current: 0,
+        total: 100
       });
 
-      const { data } = await client.query({
-        query: SCAN_ALL_DETAILED,
-        fetchPolicy: 'network-only' // Always get fresh data
-      });
+      console.log('🔍 Starting GraphQL query');
+      
+      // Simulate progress during the query
+      let progressValue = 0;
+      const progressInterval = setInterval(() => {
+        progressValue = Math.min(progressValue + 10, 50);
+        onProgress?.({
+          stage: 'scanning',
+          message: 'Scanning repositories for changes...',
+          current: progressValue,
+          total: 100
+        });
+      }, 200);
+      
+      let response;
+      try {
+        response = await client.query({
+          query: SCAN_ALL_DETAILED,
+          fetchPolicy: 'no-cache', // Bypass cache completely
+          errorPolicy: 'all', // Handle partial errors
+          context: {
+            // Add timestamp to force fresh data
+            forceFetch: true,
+            timestamp: Date.now()
+          }
+        });
+        console.log('✅ GraphQL query response:', response);
+      } catch (queryError) {
+        clearInterval(progressInterval);
+        console.error('❌ GraphQL query error:', queryError);
+        throw new Error(`GraphQL query failed: ${queryError instanceof Error ? queryError.message : String(queryError)}`);
+      } finally {
+        clearInterval(progressInterval);
+      }
+
+      if (!response || !response.data) {
+        console.error('❌ No data in response:', response);
+        throw new Error('GraphQL query returned no data');
+      }
+
+      const { data } = response;
+      console.log('📊 Data received:', data);
+
+      if (!data.scanAllDetailed) {
+        console.error('❌ No scanAllDetailed in data:', data);
+        throw new Error('GraphQL query did not return scanAllDetailed');
+      }
 
       const scanReport = data.scanAllDetailed;
       
       onProgress?.({
         stage: 'scanning',
-        message: `Found ${scanReport.totalRepositories} repositories`,
-        current: scanReport.totalRepositories,
-        total: scanReport.totalRepositories
+        message: `Processing ${scanReport.statistics.totalRepositories} repositories...`,
+        current: 60,
+        total: 100
       });
 
       // Transform GraphQL response to match existing interface
-      return scanReport.repositories.map((repo: any) => {
-        const { repository, stagedDiff, unstagedDiff, recentCommits } = repo;
+      const totalRepos = scanReport.repositories.length;
+      return scanReport.repositories.map((repo: any, index: number) => {
+        const { name, path, status, stagedDiff, unstagedDiff, recentCommits } = repo;
+        
+        // Update progress for each repo processed
+        onProgress?.({
+          stage: 'scanning',
+          message: `Processing ${name}...`,
+          current: 60 + Math.floor((40 * (index + 1)) / totalRepos),
+          total: 100
+        });
         
         // Transform file changes
-        const changes = repository.status.files.map((file: any) => ({
+        const changes = status.files.map((file: any) => ({
           file: file.path,
           status: file.status,
           staged: file.isStaged,
           unstaged: !file.isStaged
         }));
 
-        // Separate submodule changes
-        const submoduleChanges = changes.filter((c: any) => 
-          c.file.startsWith('packages/') && c.status === 'M'
-        );
-        const regularChanges = changes.filter((c: any) => 
-          !c.file.startsWith('packages/') || c.status !== 'M'
-        );
+        // Only filter submodule changes for the meta repository (matching REST API behavior)
+        const isMetaRepo = name === 'meta-gothic-framework';
+        const submoduleChanges = isMetaRepo 
+          ? changes.filter((c: any) => c.file.startsWith('packages/') && c.status === 'M')
+          : [];
+        const regularChanges = isMetaRepo
+          ? changes.filter((c: any) => !c.file.startsWith('packages/') || c.status !== 'M')
+          : changes;
 
-        // Calculate statistics
+        // Calculate statistics - match REST API behavior
         const statistics = {
           totalFiles: regularChanges.length,
           totalFilesWithSubmodules: changes.length,
           stagedFiles: regularChanges.filter((c: any) => c.staged).length,
           unstagedFiles: regularChanges.filter((c: any) => c.unstaged).length,
-          additions: regularChanges.filter((c: any) => c.status === 'A').length,
+          // Match REST API: untracked files (??) are counted as additions
+          additions: regularChanges.filter((c: any) => c.status === '??' || c.status === 'A').length,
           modifications: regularChanges.filter((c: any) => c.status === 'M').length,
           deletions: regularChanges.filter((c: any) => c.status === 'D').length,
           hiddenSubmoduleChanges: submoduleChanges.length
         };
 
         return {
-          name: repository.name,
-          path: repository.path,
+          name: name,
+          path: path,
           branch: {
-            current: repository.status.branch,
-            tracking: repository.status.trackingBranch || ''
+            current: status.branch,
+            tracking: ''
           },
           changes: regularChanges,
-          hasChanges: repository.status.isDirty,
+          hasChanges: status.isDirty,
           recentCommits: recentCommits.map((commit: any) => ({
             hash: commit.hash,
             message: commit.message,
@@ -235,6 +294,9 @@ export class GraphQLChangeReviewService {
       });
     } catch (error) {
       console.error('Error scanning repositories:', error);
+      if (error instanceof Error && error.message.includes('404')) {
+        throw new Error('GraphQL endpoint not found. Please ensure the gateway is running on port 3000');
+      }
       throw error;
     }
   }
@@ -246,14 +308,14 @@ export class GraphQLChangeReviewService {
     repositories: RepositoryChangeData[],
     onProgress?: (progress: ScanProgress) => void
   ): Promise<RepositoryChangeData[]> {
+    const reposWithChanges = repositories.filter(r => r.hasChanges);
+    
     onProgress?.({
       stage: 'generating',
-      message: 'Generating AI-powered commit messages...',
+      message: 'Preparing to generate commit messages...',
       current: 0,
-      total: repositories.filter(r => r.hasChanges).length
+      total: reposWithChanges.length
     });
-
-    const reposWithChanges = repositories.filter(r => r.hasChanges);
     
     if (reposWithChanges.length === 0) {
       return repositories;
@@ -411,13 +473,24 @@ export class GraphQLChangeReviewService {
       // 1. Scan all repositories
       const repositories = await this.scanAllRepositories(onProgress);
       
-      // 2. Generate commit messages using parallel GraphQL
+      // 2. Transition to analyzing stage
+      onProgress?.({
+        stage: 'analyzing',
+        message: 'Analyzing repository changes...',
+        current: 0,
+        total: repositories.filter(r => r.hasChanges).length
+      });
+      
+      // Brief pause to show the analyzing stage
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 3. Generate commit messages using parallel GraphQL
       const reposWithMessages = await this.generateCommitMessages(repositories, onProgress);
       
-      // 3. Generate executive summary
+      // 4. Generate executive summary
       const executiveSummary = await this.generateExecutiveSummary(reposWithMessages, onProgress);
       
-      // 4. Compile final report
+      // 5. Compile final report
       const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
       
       onProgress?.({
@@ -532,4 +605,47 @@ export class GraphQLChangeReviewService {
 }
 
 // Export singleton instance
-export const graphqlChangeReviewService = new GraphQLChangeReviewService();
+// Create singleton instance
+const service = new GraphQLChangeReviewService();
+
+// Export with the expected interface
+export const graphqlChangeReviewService = {
+  async performComprehensiveReview(onProgress?: (progress: ScanProgress) => void): Promise<ChangeReviewReport> {
+    return service.performComprehensiveReview(onProgress);
+  },
+  
+  async generateChangeReviewReport(onProgress?: (progress: ScanProgress) => void): Promise<ChangeReviewReport> {
+    return service.performComprehensiveReview(onProgress);
+  },
+  
+  async commitRepository(
+    repositoryPath: string,
+    commitMessage: string,
+    _files?: string[]
+  ): Promise<{ success: boolean; commitHash?: string; error?: string }> {
+    try {
+      const commits = await service.batchCommit([{ repoPath: repositoryPath, message: commitMessage }]);
+      const result = commits.results?.[0];
+      return {
+        success: result?.result?.success || false,
+        commitHash: result?.result?.commitHash,
+        error: result?.result?.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to commit'
+      };
+    }
+  },
+  
+  async pushRepository(
+    _repositoryPath: string
+  ): Promise<{ success: boolean; branch?: string; error?: string }> {
+    // TODO: Implement push functionality when available in GraphQL
+    return {
+      success: false,
+      error: 'Push functionality not yet implemented in GraphQL'
+    };
+  }
+};

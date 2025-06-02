@@ -510,6 +510,56 @@ export class GraphQLParallelChangeReviewService {
 
     return summary.join('\n');
   }
+
+  /**
+   * Commit changes to a repository using GraphQL
+   */
+  async commitRepository(
+    repositoryPath: string,
+    commitMessage: string,
+    files?: string[]
+  ): Promise<{ success: boolean; commitHash?: string; error?: string }> {
+    try {
+      const { data } = await client.mutate({
+        mutation: BATCH_COMMIT,
+        variables: {
+          input: {
+            commits: [{
+              repository: repositoryPath,
+              message: commitMessage,
+              stageAll: !files || files.length === 0, // Stage all if no specific files
+              files
+            }],
+            continueOnError: false
+          }
+        }
+      });
+
+      const result = data.batchCommit.results[0];
+      return {
+        success: result.success,
+        commitHash: result.commitHash,
+        error: result.error
+      };
+    } catch (error) {
+      console.error('Error committing repository:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to commit'
+      };
+    }
+  }
+
+  /**
+   * Push changes to remote repository (not implemented yet)
+   */
+  async pushRepository(repositoryPath: string): Promise<{ success: boolean; branch?: string; error?: string }> {
+    // TODO: Implement push functionality when available in GraphQL
+    return {
+      success: false,
+      error: 'Push functionality not yet implemented in GraphQL'
+    };
+  }
 }
 
 // Export singleton instance

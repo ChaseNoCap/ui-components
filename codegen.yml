@@ -1,0 +1,27 @@
+overwrite: true
+schema:
+  - http://localhost:3000/graphql
+documents:
+  - "src/**/*.{ts,tsx}"
+  - "!src/generated/**/*"
+generates:
+  src/generated/graphql.tsx:
+    plugins:
+      - "typescript"
+      - "typescript-operations"
+      - "typescript-react-apollo"
+    config:
+      withHooks: true
+      withComponent: false
+      withHOC: false
+      avoidOptionals: false
+      maybeValue: T | null | undefined
+      enumsAsTypes: true
+      skipTypename: true
+      scalars:
+        Date: string
+        DateTime: string
+        JSON: any
+  src/generated/introspection.json:
+    plugins:
+      - "introspection"

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GraphQL Test</title>
+</head>
+<body>
+    <h1>GraphQL Gateway Test</h1>
+    <button onclick="testQuery()">Test scanAllDetailed</button>
+    <pre id="result"></pre>
+    
+    <script>
+        async function testQuery() {
+            const resultEl = document.getElementById('result');
+            resultEl.textContent = 'Loading...';
+            
+            try {
+                const response = await fetch('http://localhost:3000/graphql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: `
+                            query {
+                                scanAllDetailed {
+                                    totalRepositories
+                                    repositoriesWithChanges
+                                    timestamp
+                                }
+                            }
+                        `
+                    })
+                });
+                
+                const data = await response.json();
+                resultEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultEl.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
