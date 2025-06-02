@@ -15,6 +15,18 @@ const wsLink = new GraphQLWsLink(
     connectionParams: {
       // Add any auth tokens here if needed
     },
+    // Reconnection options
+    retryAttempts: 5,
+    shouldRetry: () => true,
+    keepAlive: 10_000, // 10 second heartbeat
+    // Connection lifecycle callbacks
+    on: {
+      connected: () => console.log('WebSocket connected'),
+      closed: () => console.log('WebSocket closed'),
+      error: (error) => console.error('WebSocket error:', error),
+      ping: () => console.debug('WebSocket ping'),
+      pong: () => console.debug('WebSocket pong'),
+    },
   })
 );
 

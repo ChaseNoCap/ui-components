@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+import './styles/progress.css';
 
 // Add debugging
 console.log('main.tsx loaded');
