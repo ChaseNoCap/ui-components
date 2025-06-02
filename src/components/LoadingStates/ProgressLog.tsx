@@ -41,13 +41,13 @@ export const ProgressLog: React.FC<ProgressLogProps> = ({ title, entries, isActi
   const getTextColor = (type: LogEntry['type']) => {
     switch (type) {
       case 'success':
-        return 'text-green-600 dark:text-green-400';
+        return 'text-green-500 dark:text-green-400';
       case 'error':
-        return 'text-red-600 dark:text-red-400';
+        return 'text-red-500 dark:text-red-400';
       case 'progress':
-        return 'text-blue-600 dark:text-blue-400';
+        return 'text-blue-500 dark:text-blue-400';
       default:
-        return 'text-gray-700 dark:text-gray-300';
+        return 'text-gray-100 dark:text-gray-200';
     }
   };
 

@@ -686,13 +686,13 @@ export class GraphQLChangeReviewService {
       const repositories = await this.scanAllRepositories(onProgress, onLogEntry);
       
       // 2. Transition to analyzing stage
-      const changedRepoCount = repositories.filter(r => r.hasChanges).length;
-      this.log(`🧐 Beginning deep analysis of ${changedRepoCount} repositories with changes...`, 'progress');
+      const reposWithChanges = repositories.filter(r => r.hasChanges).length;
+      this.log(`🧐 Beginning deep analysis of ${reposWithChanges} repositories with changes...`, 'progress');
       onProgress?.({
         stage: 'analyzing',
-        message: `Examining code changes across ${changedRepoCount} repositories...`,
+        message: `Examining code changes across ${reposWithChanges} repositories...`,
         current: 0,
-        total: changedRepoCount
+        total: reposWithChanges
       });
       
       // Brief pause to show the analyzing stage
@@ -708,11 +708,19 @@ export class GraphQLChangeReviewService {
       // 5. Compile final report
       const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
       
-      this.log('🎆 Change review completed successfully!', 'success');
-      this.log(`📦 Processed ${repositories.filter(r => r.hasChanges).length} repositories with ${repositories.reduce((sum, r) => sum + (r.statistics?.totalFiles || 0), 0)} total file changes`, 'info');
+      // Log appropriate completion message based on whether changes were found
+      const changedRepoCount = repositories.filter(r => r.hasChanges).length;
+      if (changedRepoCount === 0) {
+        this.log('✅ All repositories are clean!', 'success');
+        this.log('🎯 No uncommitted changes found across any repositories', 'info');
+      } else {
+        this.log('🎆 Change review completed successfully!', 'success');
+        this.log(`📦 Processed ${changedRepoCount} repositories with ${repositories.reduce((sum, r) => sum + (r.statistics?.totalFiles || 0), 0)} total file changes`, 'info');
+      }
+      
       onProgress?.({
         stage: 'complete',
-        message: 'Comprehensive review completed successfully!'
+        message: changedRepoCount === 0 ? 'All repositories are clean!' : 'Comprehensive review completed successfully!'
       });
       
       return report;
@@ -841,12 +849,12 @@ export class GraphQLChangeReviewService {
       processedCount++;
       onProgress?.({
         stage: 'generating',
-        message: `Analyzed ${repo.name} changes and created commit message`,
+        message: `Generated: ${repo.name}`,
         current: processedCount,
         total: reposWithChanges.length
       });
       
-      this.log(`✓ ${repo.name}: Generated pattern-based commit message`, 'info');
+      this.log(`✓ ${repo.name}: Pattern-based message`, 'info');
       
       return {
         ...repo,

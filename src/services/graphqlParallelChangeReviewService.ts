@@ -6,7 +6,7 @@ import type {
   ScanProgress 
 } from './changeReviewService';
 
-// Queries
+// Queries and Mutations
 const SCAN_ALL_DETAILED = gql`
   query ScanAllDetailed {
     scanAllDetailed {
@@ -90,6 +90,36 @@ const GENERATE_EXECUTIVE_SUMMARY = gql`
         }
         riskLevel
         suggestedActions
+      }
+    }
+  }
+`;
+
+const BATCH_COMMIT = gql`
+  mutation BatchCommit($input: BatchCommitInput!) {
+    batchCommit(input: $input) {
+      totalRepositories
+      successCount
+      failureCount
+      results {
+        path
+        name
+        result {
+          success
+          commitHash
+          message
+          error
+          filesCommitted
+        }
+      }
+      pushAttempted
+      pushResults {
+        path
+        success
+        remote
+        branch
+        error
+        summary
       }
     }
   }
@@ -401,9 +431,11 @@ export class GraphQLParallelChangeReviewService {
       // 4. Compile final report
       const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
       
+      // Set appropriate completion message based on whether changes were found
+      const changedRepoCount = repositories.filter(r => r.hasChanges).length;
       onProgress?.({
         stage: 'complete',
-        message: 'Change review complete!'
+        message: changedRepoCount === 0 ? 'All repositories are clean!' : 'Change review complete!'
       });
       
       return report;
