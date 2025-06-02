@@ -5,3 +5,6 @@ export * from './dataFetcher';
 export * from './toolsService';
 export * from './toolsDataFetcher';
 export * from './changeReviewService';
+export * from './graphqlChangeReviewService';
+export * from './graphqlParallelChangeReviewService';
+export * from './apolloClient';

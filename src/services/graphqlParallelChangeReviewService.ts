@@ -1,0 +1,516 @@
+import { gql, DocumentNode } from '@apollo/client';
+import { client } from './apolloClient';
+import type { 
+  ChangeReviewReport, 
+  RepositoryChangeData, 
+  ScanProgress 
+} from './changeReviewService';
+
+// Queries
+const SCAN_ALL_DETAILED = gql`
+  query ScanAllDetailed {
+    scanAllDetailed {
+      timestamp
+      totalRepositories
+      dirtyRepositories
+      repositories {
+        repository {
+          name
+          path
+          status {
+            branch
+            trackingBranch
+            files {
+              path
+              status
+              statusDescription
+              isStaged
+              additions
+              deletions
+            }
+            isDirty
+            changeCount
+          }
+          isSubmodule
+          packageInfo {
+            name
+            version
+            description
+            private
+          }
+        }
+        stagedDiff
+        unstagedDiff
+        recentCommits {
+          hash
+          abbrevHash
+          message
+          author
+          authorEmail
+          timestamp
+          filesChanged
+        }
+        stashes {
+          index
+          message
+          timestamp
+        }
+      }
+      statistics {
+        totalFiles
+        totalAdditions
+        totalDeletions
+        affectedPackages
+        changesByType {
+          modified
+          added
+          deleted
+          renamed
+          untracked
+        }
+      }
+    }
+  }
+`;
+
+const GENERATE_EXECUTIVE_SUMMARY = gql`
+  mutation GenerateExecutiveSummary($input: ExecutiveSummaryInput!) {
+    generateExecutiveSummary(input: $input) {
+      success
+      summary
+      error
+      metadata {
+        repositoryCount
+        totalChanges
+        themes {
+          name
+          description
+          affectedRepositories
+          impact
+        }
+        riskLevel
+        suggestedActions
+      }
+    }
+  }
+`;
+
+// Single commit message mutation fragment
+const COMMIT_MESSAGE_FRAGMENT = gql`
+  fragment CommitMessageFields on CommitMessageResult {
+    repositoryPath
+    repositoryName
+    success
+    message
+    error
+    confidence
+    commitType
+  }
+`;
+
+// Helper to build parallel mutation
+function buildParallelCommitMessageMutation(repositories: RepositoryChangeData[]): DocumentNode {
+  const mutations = repositories
+    .filter(r => r.hasChanges)
+    .map((repo, index) => {
+      const alias = `msg${index}`;
+      const inputVar = `$input${index}`;
+      
+      return `
+        ${alias}: generateCommitMessages(input: ${inputVar}) {
+          results {
+            ...CommitMessageFields
+          }
+          totalTokenUsage {
+            inputTokens
+            outputTokens
+            estimatedCost
+          }
+          executionTime
+        }
+      `;
+    });
+
+  const variableDefinitions = repositories
+    .filter(r => r.hasChanges)
+    .map((_, index) => `$input${index}: BatchCommitMessageInput!`)
+    .join(', ');
+
+  return gql`
+    ${COMMIT_MESSAGE_FRAGMENT}
+    
+    mutation ParallelCommitMessages(${variableDefinitions}) {
+      ${mutations.join('\n')}
+    }
+  `;
+}
+
+export class GraphQLParallelChangeReviewService {
+  /**
+   * Scan all repositories using GraphQL
+   */
+  async scanAllRepositories(
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<RepositoryChangeData[]> {
+    try {
+      onProgress?.({
+        stage: 'scanning',
+        message: 'Scanning all repositories for changes...'
+      });
+
+      const { data } = await client.query({
+        query: SCAN_ALL_DETAILED,
+        fetchPolicy: 'network-only'
+      });
+
+      const scanReport = data.scanAllDetailed;
+      
+      onProgress?.({
+        stage: 'scanning',
+        message: `Found ${scanReport.totalRepositories} repositories`,
+        current: scanReport.totalRepositories,
+        total: scanReport.totalRepositories
+      });
+
+      // Transform GraphQL response to match existing interface
+      return scanReport.repositories.map((repo: any) => {
+        const { repository, stagedDiff, unstagedDiff, recentCommits } = repo;
+        
+        // Transform file changes
+        const changes = repository.status.files.map((file: any) => ({
+          file: file.path,
+          status: file.status,
+          staged: file.isStaged,
+          unstaged: !file.isStaged
+        }));
+
+        // Separate submodule changes
+        const submoduleChanges = changes.filter((c: any) => 
+          c.file.startsWith('packages/') && c.status === 'M'
+        );
+        const regularChanges = changes.filter((c: any) => 
+          !c.file.startsWith('packages/') || c.status !== 'M'
+        );
+
+        // Calculate statistics
+        const statistics = {
+          totalFiles: regularChanges.length,
+          totalFilesWithSubmodules: changes.length,
+          stagedFiles: regularChanges.filter((c: any) => c.staged).length,
+          unstagedFiles: regularChanges.filter((c: any) => c.unstaged).length,
+          additions: regularChanges.filter((c: any) => c.status === 'A').length,
+          modifications: regularChanges.filter((c: any) => c.status === 'M').length,
+          deletions: regularChanges.filter((c: any) => c.status === 'D').length,
+          hiddenSubmoduleChanges: submoduleChanges.length
+        };
+
+        return {
+          name: repository.name,
+          path: repository.path,
+          branch: {
+            current: repository.status.branch,
+            tracking: repository.status.trackingBranch || ''
+          },
+          changes: regularChanges,
+          hasChanges: repository.status.isDirty,
+          recentCommits: recentCommits.map((commit: any) => ({
+            hash: commit.hash,
+            message: commit.message,
+            author: commit.author,
+            date: commit.timestamp
+          })),
+          gitDiff: {
+            staged: stagedDiff || '',
+            unstaged: unstagedDiff || ''
+          },
+          newFileContents: {},
+          statistics,
+          hasHiddenSubmoduleChanges: submoduleChanges.length > 0,
+          _submoduleChanges: submoduleChanges
+        };
+      });
+    } catch (error) {
+      console.error('Error scanning repositories:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate commit messages using truly parallel GraphQL mutations
+   */
+  async generateCommitMessages(
+    repositories: RepositoryChangeData[],
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<RepositoryChangeData[]> {
+    const reposWithChanges = repositories.filter(r => r.hasChanges);
+    
+    if (reposWithChanges.length === 0) {
+      return repositories;
+    }
+
+    onProgress?.({
+      stage: 'generating',
+      message: `Generating ${reposWithChanges.length} commit messages in parallel...`,
+      current: 0,
+      total: reposWithChanges.length
+    });
+
+    try {
+      // Build parallel mutation and variables
+      const parallelMutation = buildParallelCommitMessageMutation(reposWithChanges);
+      
+      const variables: any = {};
+      reposWithChanges.forEach((repo, index) => {
+        variables[`input${index}`] = {
+          repositories: [{
+            path: repo.path,
+            name: repo.name,
+            diff: repo.gitDiff.unstaged + '\n' + repo.gitDiff.staged,
+            filesChanged: repo.changes.map(c => c.file),
+            recentCommits: repo.recentCommits.slice(0, 5).map(c => c.message),
+            context: `Repository: ${repo.name}, Branch: ${repo.branch.current}`
+          }],
+          styleGuide: {
+            format: 'conventional',
+            maxLength: 72,
+            includeScope: true,
+            includeBody: true
+          },
+          analyzeRelationships: false // Don't analyze relationships for individual repos
+        };
+      });
+
+      // Execute parallel mutations
+      const startTime = Date.now();
+      const { data } = await client.mutate({
+        mutation: parallelMutation,
+        variables
+      });
+
+      const executionTime = Date.now() - startTime;
+      console.log(`Generated ${reposWithChanges.length} commit messages in ${executionTime}ms (parallel)`);
+
+      // Process results
+      let processedCount = 0;
+      const resultMap = new Map<string, string>();
+      
+      reposWithChanges.forEach((repo, index) => {
+        const result = data[`msg${index}`];
+        if (result && result.results[0] && result.results[0].success) {
+          resultMap.set(repo.name, result.results[0].message);
+          processedCount++;
+          
+          onProgress?.({
+            stage: 'generating',
+            message: `Generated message for ${repo.name}`,
+            current: processedCount,
+            total: reposWithChanges.length
+          });
+        }
+      });
+
+      // Map results back to repositories
+      return repositories.map(repo => {
+        const message = resultMap.get(repo.name);
+        if (message) {
+          return {
+            ...repo,
+            generatedCommitMessage: message
+          };
+        }
+        return repo;
+      });
+    } catch (error) {
+      console.error('Error generating commit messages:', error);
+      // Fallback to basic generation
+      return this.generateFallbackCommitMessages(repositories);
+    }
+  }
+
+  /**
+   * Generate executive summary using GraphQL
+   */
+  async generateExecutiveSummary(
+    repositories: RepositoryChangeData[],
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<string> {
+    onProgress?.({
+      stage: 'summarizing',
+      message: 'Creating executive summary...'
+    });
+
+    const reposWithMessages = repositories.filter(
+      r => r.hasChanges && r.generatedCommitMessage
+    );
+
+    if (reposWithMessages.length === 0) {
+      return 'No changes detected across any repositories.';
+    }
+
+    try {
+      const input = {
+        commitMessages: reposWithMessages.map(repo => ({
+          repository: repo.name,
+          message: repo.generatedCommitMessage!,
+          stats: {
+            filesChanged: repo.statistics.totalFiles,
+            additions: repo.statistics.additions,
+            deletions: repo.statistics.deletions
+          }
+        })),
+        audience: 'technical',
+        maxLength: 500,
+        focusAreas: ['breaking-changes', 'new-features', 'performance'],
+        includeRiskAssessment: true,
+        includeRecommendations: true
+      };
+
+      const { data } = await client.mutate({
+        mutation: GENERATE_EXECUTIVE_SUMMARY,
+        variables: { input }
+      });
+
+      if (data.generateExecutiveSummary.success) {
+        return data.generateExecutiveSummary.summary;
+      } else {
+        console.warn('Failed to generate AI executive summary, using fallback');
+        return this.generateFallbackExecutiveSummary(repositories);
+      }
+    } catch (error) {
+      console.error('Error generating executive summary:', error);
+      return this.generateFallbackExecutiveSummary(repositories);
+    }
+  }
+
+  /**
+   * Main entry point: scan all repos and generate complete report
+   */
+  async performComprehensiveReview(
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<ChangeReviewReport> {
+    try {
+      // 1. Scan all repositories
+      const repositories = await this.scanAllRepositories(onProgress);
+      
+      // 2. Generate commit messages using parallel GraphQL
+      const reposWithMessages = await this.generateCommitMessages(repositories, onProgress);
+      
+      // 3. Generate executive summary
+      const executiveSummary = await this.generateExecutiveSummary(reposWithMessages, onProgress);
+      
+      // 4. Compile final report
+      const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
+      
+      onProgress?.({
+        stage: 'complete',
+        message: 'Change review complete!'
+      });
+      
+      return report;
+    } catch (error) {
+      console.error('Error performing comprehensive review:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a complete change review report
+   */
+  private async generateChangeReport(
+    repositories: RepositoryChangeData[],
+    executiveSummary: string
+  ): Promise<ChangeReviewReport> {
+    const statistics = {
+      totalFiles: 0,
+      totalAdditions: 0,
+      totalDeletions: 0,
+      totalModifications: 0,
+      affectedPackages: [] as string[]
+    };
+
+    repositories.forEach(repo => {
+      if (repo.hasChanges) {
+        const repoStats = repo.statistics || {
+          totalFiles: 0,
+          additions: 0,
+          deletions: 0,
+          modifications: 0,
+          stagedFiles: 0,
+          unstagedFiles: 0
+        };
+        
+        statistics.totalFiles += repoStats.totalFiles || 0;
+        statistics.totalAdditions += repoStats.additions || 0;
+        statistics.totalDeletions += repoStats.deletions || 0;
+        statistics.totalModifications += repoStats.modifications || 0;
+        
+        if (!statistics.affectedPackages.includes(repo.name)) {
+          statistics.affectedPackages.push(repo.name);
+        }
+      }
+    });
+
+    return {
+      executiveSummary,
+      generatedAt: new Date(),
+      repositories,
+      statistics,
+      scanTime: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Fallback commit message generation
+   */
+  private generateFallbackCommitMessages(
+    repositories: RepositoryChangeData[]
+  ): RepositoryChangeData[] {
+    return repositories.map(repo => {
+      if (!repo.hasChanges) return repo;
+
+      const stats = repo.statistics || { additions: 0, modifications: 0, deletions: 0 };
+      const { additions = 0, modifications = 0, deletions = 0 } = stats;
+      const actions = [];
+      
+      if (additions > 0) actions.push(`add ${additions} file${additions > 1 ? 's' : ''}`);
+      if (modifications > 0) actions.push(`update ${modifications} file${modifications > 1 ? 's' : ''}`);
+      if (deletions > 0) actions.push(`remove ${deletions} file${deletions > 1 ? 's' : ''}`);
+      
+      const message = `chore(${repo.name}): ${actions.join(', ')}`;
+      
+      return {
+        ...repo,
+        generatedCommitMessage: message
+      };
+    });
+  }
+
+  /**
+   * Fallback executive summary generation
+   */
+  private generateFallbackExecutiveSummary(
+    repositories: RepositoryChangeData[]
+  ): string {
+    const changedRepos = repositories.filter(r => r.hasChanges);
+    
+    if (changedRepos.length === 0) {
+      return 'No changes detected across any repositories.';
+    }
+
+    const totalChanges = changedRepos.reduce(
+      (sum, repo) => sum + (repo.statistics?.totalFiles || 0),
+      0
+    );
+
+    const summary = [
+      `• ${changedRepos.length} repositories have uncommitted changes`,
+      `• Total of ${totalChanges} files affected across the codebase`,
+      `• Primary packages affected: ${changedRepos.map(r => r.name).join(', ')}`
+    ];
+
+    return summary.join('\n');
+  }
+}
+
+// Export singleton instance
+export const graphqlParallelChangeReviewService = new GraphQLParallelChangeReviewService();

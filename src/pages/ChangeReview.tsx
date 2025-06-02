@@ -5,6 +5,8 @@ import {
   ScanProgress,
   RepositoryChangeData 
 } from '../services/changeReviewService';
+import { graphqlChangeReviewService } from '../services/graphqlChangeReviewService';
+import { graphqlParallelChangeReviewService } from '../services/graphqlParallelChangeReviewService';
 import { LoadingModal } from '../components/LoadingStates/LoadingModal';
 import { ErrorMessage } from '../components/ErrorDisplay/ErrorMessage';
 import { Button } from '../components/ui/button';
@@ -21,10 +23,17 @@ import {
   Edit2,
   Send,
   RefreshCw,
-  Upload
+  Upload,
+  Zap,
+  Layers
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from '../lib/toast';
+import { Switch } from '../components/ui/switch';
+import { Label } from '../components/ui/label';
+
+// Feature flag for GraphQL
+const USE_GRAPHQL = import.meta.env.VITE_USE_GRAPHQL === 'true' || false;
 
 export const ChangeReviewPage: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -36,6 +45,15 @@ export const ChangeReviewPage: React.FC = () => {
   const [committingRepos, setCommittingRepos] = useState<Set<string>>(new Set());
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
   const [showSubmoduleChanges, setShowSubmoduleChanges] = useState<Map<string, boolean>>(new Map());
+  const [apiMode, setApiMode] = useState<'rest' | 'graphql' | 'graphql-parallel'>(
+    USE_GRAPHQL ? 'graphql' : 'rest'
+  );
+
+  // Select the appropriate service
+  const reviewService = 
+    apiMode === 'graphql-parallel' ? graphqlParallelChangeReviewService :
+    apiMode === 'graphql' ? graphqlChangeReviewService : 
+    changeReviewService;
 
   // Start comprehensive review
   const startReview = useCallback(async () => {
@@ -44,7 +62,7 @@ export const ChangeReviewPage: React.FC = () => {
     setScanProgress({ stage: 'scanning', message: 'Initializing...' });
 
     try {
-      const reviewReport = await changeReviewService.performComprehensiveReview(
+      const reviewReport = await reviewService.performComprehensiveReview(
         (progress) => setScanProgress(progress)
       );
       
@@ -61,7 +79,9 @@ export const ChangeReviewPage: React.FC = () => {
       setTimeout(() => {
         setIsScanning(false);
         setScanProgress(null);
-        toast.success('Change review completed successfully!');
+        const modeText = apiMode === 'graphql-parallel' ? ' using parallel GraphQL!' : 
+                        apiMode === 'graphql' ? ' using GraphQL!' : '!';
+        toast.success(`Change review completed successfully${modeText}`);
       }, 500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
@@ -70,7 +90,7 @@ export const ChangeReviewPage: React.FC = () => {
       setIsScanning(false);
       setScanProgress(null);
     }
-  }, []);
+  }, [reviewService, apiMode]);
 
   // Toggle repository expansion
   const toggleRepo = useCallback((repoName: string) => {
@@ -257,17 +277,59 @@ export const ChangeReviewPage: React.FC = () => {
               Comprehensive analysis of all uncommitted changes across repositories
             </p>
           </div>
-          {report && (
-            <Button 
-              onClick={startReview} 
-              disabled={isScanning}
-              variant="outline"
-              size="sm"
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${isScanning ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          )}
+          <div className="flex items-center gap-4">
+            {/* API Mode Selector */}
+            <div className="flex items-center gap-2">
+              <Label className="text-sm">API Mode:</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={apiMode === 'rest' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setApiMode('rest');
+                    toast.info('Switched to REST API');
+                  }}
+                >
+                  REST
+                </Button>
+                <Button
+                  size="sm"
+                  variant={apiMode === 'graphql' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setApiMode('graphql');
+                    toast.info('Switched to GraphQL API');
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <Layers className="h-3 w-3" />
+                  GraphQL
+                </Button>
+                <Button
+                  size="sm"
+                  variant={apiMode === 'graphql-parallel' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setApiMode('graphql-parallel');
+                    toast.info('Switched to Parallel GraphQL API');
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <Zap className="h-3 w-3" />
+                  Parallel
+                </Button>
+              </div>
+            </div>
+            {report && (
+              <Button 
+                onClick={startReview} 
+                disabled={isScanning}
+                variant="outline"
+                size="sm"
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${isScanning ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
