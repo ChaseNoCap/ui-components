@@ -9,6 +9,10 @@ import { createHttpLink } from '@apollo/client/link/http';
 const GRAPHQL_HTTP_URL = import.meta.env.VITE_GRAPHQL_URL || 'http://localhost:3000/graphql';
 const GRAPHQL_WS_URL = import.meta.env.VITE_GRAPHQL_WS_URL || 'ws://localhost:3000/graphql';
 
+// Direct service URLs for fallback
+export const CLAUDE_SERVICE_URL = 'http://localhost:3002/graphql';
+export const REPO_SERVICE_URL = 'http://localhost:3004/graphql';
+
 // Create HTTP link for queries and mutations
 const httpLink = createHttpLink({
   uri: GRAPHQL_HTTP_URL,
@@ -155,3 +159,27 @@ export async function checkGraphQLHealth(): Promise<boolean> {
     return false;
   }
 }
+
+// Create a separate client for Claude service (temporary workaround)
+export const claudeClient = new ApolloClient({
+  link: createHttpLink({
+    uri: CLAUDE_SERVICE_URL,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    fetchOptions: {
+      mode: 'cors',
+    },
+  }),
+  cache: new InMemoryCache(),
+  defaultOptions: {
+    query: {
+      fetchPolicy: 'no-cache',
+      errorPolicy: 'all',
+    },
+    mutate: {
+      errorPolicy: 'all',
+    },
+  },
+});

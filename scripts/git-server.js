@@ -1492,7 +1492,7 @@ app.listen(PORT, () => {
 
 // Agent run endpoints
 const WORKSPACE_ROOT = path.join(__dirname, '../../..');
-const runStoragePath = path.join(WORKSPACE_ROOT, '.claude-runs');
+const runStoragePath = path.join(WORKSPACE_ROOT, 'logs', 'claude-runs');
 
 // Mock run storage (in real implementation, this would use the actual RunStorage class)
 const mockRuns = [

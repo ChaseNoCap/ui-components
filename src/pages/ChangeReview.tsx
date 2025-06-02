@@ -32,9 +32,10 @@ import { useGitOperationCompletion } from '../hooks/useGitOperationCompletion';
 import { toast } from '../lib/toast';
 // import { Switch } from '../components/ui/switch'; // Unused import
 import { Label } from '../components/ui/label';
+import { settingsService } from '../services/settingsService';
 
-// Feature flag for GraphQL
-const USE_GRAPHQL = import.meta.env.VITE_USE_GRAPHQL === 'true' || false;
+// Feature flag for GraphQL - default to true
+const USE_GRAPHQL = import.meta.env.VITE_USE_GRAPHQL !== 'false';
 
 export const ChangeReviewPage: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -50,6 +51,16 @@ export const ChangeReviewPage: React.FC = () => {
   const [apiMode, setApiMode] = useState<'rest' | 'graphql' | 'graphql-parallel'>(
     USE_GRAPHQL ? 'graphql' : 'rest'
   );
+  const [logEntries, setLogEntries] = useState<Array<{
+    timestamp: Date;
+    message: string;
+    type: 'info' | 'success' | 'error' | 'progress';
+  }>>([]);
+  
+  // Load auto-close settings
+  const modalSettings = settingsService.getModalSettings('graphqlProgress');
+  const [autoCloseEnabled, setAutoCloseEnabled] = useState(modalSettings.autoClose);
+  const [autoCloseDelay] = useState(modalSettings.autoCloseDelay);
 
   // Select the appropriate service
   const reviewService = 
@@ -85,10 +96,13 @@ export const ChangeReviewPage: React.FC = () => {
     setIsScanning(true);
     setError(null);
     setScanProgress({ stage: 'scanning', message: 'Initializing...' });
+    setLogEntries([]); // Clear previous logs
 
     try {
+      const isGraphQL = apiMode === 'graphql' || apiMode === 'graphql-parallel';
       const reviewReport = await reviewService.performComprehensiveReview(
-        (progress) => setScanProgress(progress)
+        (progress) => setScanProgress(progress),
+        isGraphQL ? (entry) => setLogEntries(prev => [...prev, entry]) : undefined
       );
       
       // Set report first
@@ -100,14 +114,20 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
-      // Delay closing modal to ensure DOM is fully updated
-      setTimeout(() => {
-        setIsScanning(false);
-        setScanProgress(null);
-        const modeText = apiMode === 'graphql-parallel' ? ' using parallel GraphQL!' : 
-                        apiMode === 'graphql' ? ' using GraphQL!' : '!';
+      // For REST mode, close modal after a delay
+      // For GraphQL modes, let the modal handle its own closing based on auto-close settings
+      if (apiMode === 'rest') {
+        setTimeout(() => {
+          setIsScanning(false);
+          setScanProgress(null);
+          toast.success('Change review completed successfully!');
+        }, 500);
+      } else {
+        // For GraphQL modes, just show success toast
+        // The modal will handle closing based on auto-close settings
+        const modeText = apiMode === 'graphql-parallel' ? ' using parallel GraphQL!' : ' using GraphQL!';
         toast.success(`Change review completed successfully${modeText}`);
-      }, 500);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
@@ -320,6 +340,13 @@ export const ChangeReviewPage: React.FC = () => {
     }
   }, [hasInitialLoad, startReview]);
 
+  // Handle auto-close preference changes
+  const handleAutoCloseChange = useCallback((enabled: boolean) => {
+    setAutoCloseEnabled(enabled);
+    settingsService.updateModalSettings('graphqlProgress', { autoClose: enabled });
+    toast.success(`Auto-close ${enabled ? 'enabled' : 'disabled'}`);
+  }, []);
+
   // Get status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -435,6 +462,11 @@ export const ChangeReviewPage: React.FC = () => {
         <LoadingModal
           isOpen={true}
           title="Performing Change Review"
+          useProgressLog={apiMode === 'graphql' || apiMode === 'graphql-parallel'}
+          logEntries={logEntries}
+          autoClose={autoCloseEnabled}
+          autoCloseDelay={autoCloseDelay}
+          onAutoCloseChange={handleAutoCloseChange}
           stages={[
             {
               id: 'scanning',
@@ -468,8 +500,11 @@ export const ChangeReviewPage: React.FC = () => {
               message: scanProgress.stage === 'summarizing' ? scanProgress.message : undefined
             }
           ]}
-          onClose={() => setIsScanning(false)}
-          allowClose={false}
+          onClose={() => {
+            setIsScanning(false);
+            setScanProgress(null);
+          }}
+          allowClose={true}
         />
       )}
 

@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { useToast } from '../components/Toast/useToast';
 import { Loader2, Save, RotateCcw } from 'lucide-react';
+import { settingsService } from '../services/settingsService';
 
 interface ParallelismConfig {
   concurrentAgents: number;
@@ -23,10 +24,16 @@ interface AutomationConfig {
   skipConfirmations: boolean;
 }
 
+interface UIConfig {
+  modalAutoClose: boolean;
+  modalAutoCloseDelay: number;
+}
+
 interface UserConfig {
   id: string;
   parallelism: ParallelismConfig;
   automation: AutomationConfig;
+  ui: UIConfig;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,7 +67,20 @@ const Config: React.FC = () => {
       // TODO: Replace with GraphQL query when server is ready
       const stored = localStorage.getItem('meta-gothic-user-config');
       if (stored) {
-        setConfig(JSON.parse(stored));
+        const parsedConfig = JSON.parse(stored);
+        // Ensure UI settings exist in loaded config
+        if (!parsedConfig.ui) {
+          const modalSettings = settingsService.getModalSettings('graphqlProgress');
+          parsedConfig.ui = {
+            modalAutoClose: modalSettings.autoClose,
+            modalAutoCloseDelay: modalSettings.autoCloseDelay,
+          };
+        }
+        // Force auto-close to false (migration from old default)
+        if (parsedConfig.ui.modalAutoClose === true) {
+          parsedConfig.ui.modalAutoClose = false;
+        }
+        setConfig(parsedConfig);
       } else {
         // Default configuration
         const defaultConfig: UserConfig = {
@@ -77,6 +97,10 @@ const Config: React.FC = () => {
             autoRetry: true,
             maxRetries: 3,
             skipConfirmations: false,
+          },
+          ui: {
+            modalAutoClose: false,
+            modalAutoCloseDelay: 3000,
           },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -101,6 +125,13 @@ const Config: React.FC = () => {
       setSaving(true);
       // TODO: Replace with GraphQL mutation when server is ready
       localStorage.setItem('meta-gothic-user-config', JSON.stringify(config));
+      
+      // Also update the settings service for UI settings
+      settingsService.updateModalSettings('graphqlProgress', {
+        autoClose: config.ui.modalAutoClose,
+        autoCloseDelay: config.ui.modalAutoCloseDelay,
+      });
+      
       setIsDirty(false);
       toast({
         title: 'Configuration saved',
@@ -150,6 +181,17 @@ const Config: React.FC = () => {
     });
   };
 
+  const updateUI = (updates: Partial<UIConfig>) => {
+    if (!config) return;
+    
+    updateConfig({
+      ui: {
+        ...config.ui,
+        ...updates,
+      },
+    });
+  };
+
   const resetToDefaults = () => {
     const defaultConfig: UserConfig = {
       id: 'default',
@@ -165,6 +207,10 @@ const Config: React.FC = () => {
         autoRetry: true,
         maxRetries: 3,
         skipConfirmations: false,
+      },
+      ui: {
+        modalAutoClose: false,
+        modalAutoCloseDelay: 3000,
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -411,6 +457,70 @@ const Config: React.FC = () => {
                     updateAutomation({ skipConfirmations: checked })
                   }
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* UI Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle>UI Settings</CardTitle>
+            <CardDescription>
+              Configure user interface behaviors and preferences
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="modal-auto-close">Auto-close Progress Modals</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically close GraphQL progress modals on successful completion
+                  </p>
+                </div>
+                <Switch
+                  id="modal-auto-close"
+                  checked={config.ui.modalAutoClose}
+                  onCheckedChange={(checked) => 
+                    updateUI({ modalAutoClose: checked })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="auto-close-delay">
+                  Auto-close Delay (seconds)
+                </Label>
+                <div className="flex items-center space-x-2">
+                  <Input
+                    id="auto-close-delay"
+                    type="number"
+                    min={1}
+                    max={10}
+                    step={0.5}
+                    value={config.ui.modalAutoCloseDelay / 1000}
+                    onChange={(e) => {
+                      const seconds = Math.min(10, Math.max(1, parseFloat(e.target.value) || 3));
+                      updateUI({ modalAutoCloseDelay: seconds * 1000 });
+                    }}
+                    disabled={!config.ui.modalAutoClose}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {config.ui.modalAutoCloseDelay / 1000} seconds
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Time to wait before automatically closing the modal (1-10 seconds)
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-950 p-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Note:</strong> Auto-close will not activate if errors are detected during the operation, 
+                  allowing you to review and copy error messages.
+                </p>
               </div>
             </div>
           </CardContent>
