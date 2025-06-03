@@ -1,76 +1,115 @@
-import { ApolloClient, InMemoryCache, split, ApolloLink } from '@apollo/client';
+import { 
+  ApolloClient, 
+  InMemoryCache, 
+  createHttpLink,
+  split,
+  ApolloLink,
+  Observable,
+  gql
+} from '@apollo/client/core';
 import { getMainDefinition } from '@apollo/client/utilities';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import { onError } from '@apollo/client/link/error';
-import { createHttpLink } from '@apollo/client/link/http';
+import { RetryLink } from '@apollo/client/link/retry';
 
-// GraphQL Gateway URL
-const GRAPHQL_HTTP_URL = import.meta.env.VITE_GRAPHQL_URL || 'http://localhost:3000/graphql';
-const GRAPHQL_WS_URL = import.meta.env.VITE_GRAPHQL_WS_URL || 'ws://localhost:3000/graphql';
-
-// Direct service URLs for fallback
-export const CLAUDE_SERVICE_URL = 'http://localhost:3002/graphql';
-export const REPO_SERVICE_URL = 'http://localhost:3004/graphql';
+// Environment configuration
+const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:3000/graphql';
+const WS_ENDPOINT = import.meta.env.VITE_WS_ENDPOINT || 'ws://localhost:3000/graphql';
 
 // Create HTTP link for queries and mutations
 const httpLink = createHttpLink({
-  uri: GRAPHQL_HTTP_URL,
-  credentials: 'include',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  uri: GRAPHQL_ENDPOINT,
+  credentials: 'include', // Include cookies for auth
 });
 
 // Create WebSocket link for subscriptions
 const wsLink = new GraphQLWsLink(
   createClient({
-    url: GRAPHQL_WS_URL,
-    connectionParams: {
-      // Add any auth tokens or connection params here
-      timestamp: new Date().toISOString(),
-    },
-    reconnect: true,
-    retryAttempts: 5,
+    url: WS_ENDPOINT,
+    connectionParams: async () => ({
+      // Add auth token if available
+      authToken: localStorage.getItem('authToken'),
+    }),
     shouldRetry: () => true,
-    on: {
-      connected: () => console.log('WebSocket connected'),
-      closed: () => console.log('WebSocket closed'),
-      error: (error) => console.error('WebSocket error:', error),
-    },
+    retryAttempts: 5,
+    connectionAckWaitTimeout: 5000,
   })
 );
 
-// Error handling link
-const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
-  console.log('🔍 GraphQL Operation:', operation.operationName, operation.variables);
-  
-  if (graphQLErrors) {
-    graphQLErrors.forEach(({ message, locations, path, extensions }) => {
-      console.error(
-        `GraphQL error: Message: ${message}, Location: ${locations}, Path: ${path}`,
-        extensions
-      );
-    });
-  }
-
-  if (networkError) {
-    console.error(`Network error: ${networkError}`);
-    console.error('Network error details:', {
-      message: networkError.message,
-      name: networkError.name,
-      response: (networkError as any).response,
-      statusCode: (networkError as any).statusCode
-    });
-    
-    // Retry on network errors
-    if (networkError.message.includes('Failed to fetch')) {
-      return forward(operation);
+// Retry link for network failures
+const retryLink = new RetryLink({
+  delay: {
+    initial: 300,
+    max: 5000,
+    jitter: true
+  },
+  attempts: {
+    max: 5,
+    retryIf: (error, _operation) => {
+      // Retry on network errors
+      return !!error && error.networkError !== null;
     }
   }
 });
 
-// Use split to route operations to the correct link
+// Error handling link
+const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
+  if (graphQLErrors) {
+    graphQLErrors.forEach(({ message, locations, path, extensions }) => {
+      console.error(
+        `[GraphQL error]: Message: ${message}, Location: ${locations}, Path: ${path}`,
+        extensions
+      );
+      
+      // Handle specific error codes
+      if (extensions?.code === 'UNAUTHENTICATED') {
+        // Redirect to login or refresh token
+        window.location.href = '/login';
+      }
+    });
+  }
+
+  if (networkError) {
+    console.error(`[Network error]: ${networkError}`);
+    
+    // Handle offline scenarios
+    if (!navigator.onLine) {
+      console.log('App is offline, will retry when online');
+    }
+  }
+});
+
+// Request timing link (for performance monitoring)
+const timingLink = new ApolloLink((operation, forward) => {
+  const startTime = Date.now();
+  
+  return new Observable(observer => {
+    const subscription = forward(operation).subscribe({
+      next: (result) => {
+        const duration = Date.now() - startTime;
+        
+        // Add timing to extensions
+        if (result.extensions) {
+          result.extensions.timing = { duration };
+        }
+        
+        // Log slow queries
+        if (duration > 100) {
+          console.warn(`Slow query detected: ${operation.operationName} took ${duration}ms`);
+        }
+        
+        observer.next(result);
+      },
+      error: observer.error.bind(observer),
+      complete: observer.complete.bind(observer),
+    });
+    
+    return () => subscription.unsubscribe();
+  });
+});
+
+// Split traffic between WebSocket and HTTP
 const splitLink = split(
   ({ query }) => {
     const definition = getMainDefinition(query);
@@ -83,103 +122,110 @@ const splitLink = split(
   httpLink
 );
 
-// Combine error handling with split link
-const link = ApolloLink.from([errorLink, splitLink]);
+// Combine all links
+const link = ApolloLink.from([
+  timingLink,
+  errorLink,
+  retryLink,
+  splitLink
+]);
+
+// Configure cache with type policies
+const cache = new InMemoryCache({
+  typePolicies: {
+    Query: {
+      fields: {
+        // Cache repository queries by path
+        gitStatus: {
+          keyArgs: ['path'],
+        },
+        repositoryDetails: {
+          keyArgs: ['path'],
+        },
+      }
+    },
+    Repository: {
+      keyFields: ['owner', 'name'],
+    },
+    ClaudeSession: {
+      keyFields: ['id'],
+    },
+    AgentRun: {
+      keyFields: ['id'],
+      fields: {
+        // Merge arrays for progress updates
+        logs: {
+          merge(existing = [], incoming) {
+            return [...existing, ...incoming];
+          }
+        }
+      }
+    },
+    GitStatus: {
+      keyFields: ['path'],
+    },
+    SystemHealth: {
+      keyFields: [], // Singleton
+      merge: true,
+    }
+  },
+  possibleTypes: {
+    // Add possible types for interfaces/unions if needed
+  }
+});
 
 // Create Apollo Client instance
 export const apolloClient = new ApolloClient({
   link,
-  cache: new InMemoryCache({
-    typePolicies: {
-      Query: {
-        fields: {
-          // Cache policies for specific queries
-          gitStatus: {
-            keyArgs: ['path'],
-          },
-          scanAllRepositories: {
-            keyArgs: false, // Always fetch fresh data
-          },
-          scanAllDetailed: {
-            keyArgs: false, // Always fetch fresh data
-            merge: false, // Replace instead of merging
-          },
-          sessions: {
-            merge: false, // Replace sessions array instead of merging
-          },
-        },
-      },
-      GitStatus: {
-        keyFields: ['branch'],
-      },
-      ClaudeSession: {
-        keyFields: ['id'],
-      },
-      RepositoryScan: {
-        keyFields: ['path'],
-      },
-      DetailedRepository: {
-        keyFields: ['path'],
-      },
-      DetailedScanReport: {
-        keyFields: false, // No key fields, always replace
-      },
-      FileStatus: {
-        keyFields: ['path'],
-      },
-      ScanStatistics: {
-        keyFields: false,
-      },
-      ScanMetadata: {
-        keyFields: false,
-      },
-    },
-  }),
+  cache,
   defaultOptions: {
     watchQuery: {
-      fetchPolicy: 'no-cache',
+      fetchPolicy: 'cache-and-network',
       errorPolicy: 'all',
     },
     query: {
-      fetchPolicy: 'no-cache',
+      fetchPolicy: 'cache-first',
       errorPolicy: 'all',
     },
     mutate: {
       errorPolicy: 'all',
     },
   },
+  connectToDevTools: process.env.NODE_ENV === 'development',
 });
 
-// Helper to check if GraphQL gateway is available
-export async function checkGraphQLHealth(): Promise<boolean> {
+// Helper to reset store (useful for logout)
+export const resetApolloStore = async () => {
+  await apolloClient.clearStore();
+};
+
+// Helper to refetch all active queries
+export const refetchAllQueries = async () => {
+  await apolloClient.refetchQueries({
+    include: 'active',
+  });
+};
+
+// Health check function
+export const checkGraphQLHealth = async (): Promise<boolean> => {
   try {
-    const response = await fetch(GRAPHQL_HTTP_URL.replace('/graphql', '/health'));
-    return response.ok;
-  } catch {
+    const result = await apolloClient.query({
+      query: gql`
+        query HealthCheck {
+          health {
+            healthy
+          }
+        }
+      `,
+      fetchPolicy: 'network-only',
+    });
+    
+    return result.data?.health?.healthy || false;
+  } catch (error) {
+    console.error('GraphQL health check failed:', error);
     return false;
   }
-}
+};
 
-// Create a separate client for Claude service (temporary workaround)
-export const claudeClient = new ApolloClient({
-  link: createHttpLink({
-    uri: CLAUDE_SERVICE_URL,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    fetchOptions: {
-      mode: 'cors',
-    },
-  }),
-  cache: new InMemoryCache(),
-  defaultOptions: {
-    query: {
-      fetchPolicy: 'no-cache',
-      errorPolicy: 'all',
-    },
-    mutate: {
-      errorPolicy: 'all',
-    },
-  },
-});
+// Export types for use in components
+export type { ApolloClient } from '@apollo/client/core';

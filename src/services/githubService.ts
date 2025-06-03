@@ -616,3 +616,6 @@ class GitHubService {
 
 // Export singleton instance
 export const githubService = new GitHubService();
+
+// Re-export the GraphQL version as the default going forward
+export { githubServiceGraphQL as default } from './githubServiceGraphQL';

@@ -4,10 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { HealthDashboard } from './components/HealthDashboard';
 import { PipelineControl } from './components/PipelineControl';
-import { Tools } from './pages/Tools';
+import { ToolsGraphQL } from './pages/ToolsGraphQL';
 import { ChangeReviewPage } from './pages/ChangeReview';
-import { RepositoryStatusPage } from './pages/RepositoryStatus';
-import { ManualCommitPage } from './pages/ManualCommit';
+import { RepositoryStatusPageGraphQL } from './pages/RepositoryStatusGraphQL';
 import { GitHubErrorBoundary } from './components/ErrorBoundary';
 import { ClaudeConsoleStandalone } from './pages/ClaudeConsoleStandalone';
 import { GitHubTokenBanner } from './components/TokenValidation';
@@ -17,7 +16,7 @@ import { ThemeProvider } from './context';
 import { ToastProvider } from './components/Toast';
 import { GraphQLProvider } from './providers/GraphQLProvider';
 import Config from './pages/Config';
-import AgentStatus from './pages/AgentStatus';
+import AgentStatusGraphQL from './pages/AgentStatusGraphQL';
 import { GraphQLDebug } from './components/GraphQLDebug';
 import './utils/test-graphql'; // Load test utilities
 
@@ -66,12 +65,11 @@ const DashboardContent: React.FC = () => {
       <Routes>
         <Route path="/" element={<HealthDashboard />} />
         <Route path="/pipelines" element={<PipelineControl />} />
-        <Route path="/tools" element={<Tools />} />
+        <Route path="/tools" element={<ToolsGraphQL />} />
         <Route path="/tools/change-review" element={<ChangeReviewPage />} />
-        <Route path="/tools/repository-status" element={<RepositoryStatusPage />} />
-        <Route path="/tools/manual-commit" element={<ManualCommitPage />} />
+        <Route path="/tools/repository-status" element={<RepositoryStatusPageGraphQL />} />
         <Route path="/config" element={<Config />} />
-        <Route path="/agent-status" element={<AgentStatus />} />
+        <Route path="/agent-status" element={<AgentStatusGraphQL />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
       <GraphQLDebug />

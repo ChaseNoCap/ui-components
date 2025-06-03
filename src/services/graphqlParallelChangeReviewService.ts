@@ -100,26 +100,14 @@ const BATCH_COMMIT = gql`
     batchCommit(input: $input) {
       totalRepositories
       successCount
-      failureCount
       results {
-        path
-        name
-        result {
-          success
-          commitHash
-          message
-          error
-          filesCommitted
-        }
-      }
-      pushAttempted
-      pushResults {
-        path
         success
-        remote
-        branch
+        commitHash
         error
-        summary
+        repository
+        committedFiles
+        isClean
+        remainingFiles
       }
     }
   }

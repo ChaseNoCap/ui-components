@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useQuery, gql } from '@apollo/client';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
+import { SystemHealthMonitor } from './GraphQLDebug/SystemHealthMonitor';
 
 const TEST_QUERY = gql`
-  query TestScanAllDetailed {
+  query DebugScanAllDetailed {
     scanAllDetailed {
       statistics {
         totalRepositories
@@ -111,6 +112,11 @@ export const GraphQLDebug: React.FC = () => {
             </div>
           </div>
         </Card>
+      )}
+      {showDebug && (
+        <div className="fixed bottom-20 right-4 z-50 mb-4">
+          <SystemHealthMonitor />
+        </div>
       )}
     </div>
   );

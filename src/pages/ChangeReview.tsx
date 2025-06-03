@@ -135,6 +135,13 @@ export const ChangeReviewPage: React.FC = () => {
       setIsScanning(false);
       setScanProgress(null);
       setIsRefreshing(false);
+      // Reset the review state in case of error to allow retry
+      if (apiMode === 'graphql' || apiMode === 'graphql-parallel') {
+        graphqlChangeReviewService.resetReviewState();
+        if (apiMode === 'graphql-parallel') {
+          graphqlParallelChangeReviewService.resetReviewState();
+        }
+      }
     }
   }, [reviewService, apiMode]);
 
@@ -278,7 +285,7 @@ export const ChangeReviewPage: React.FC = () => {
         message: repo.generatedCommitMessage!
       }));
       
-      const result = await changeReviewService.batchCommit(commits);
+      const result = await reviewService.batchCommit(commits);
       
       // Process results
       const successfulRepos: string[] = [];
@@ -296,7 +303,7 @@ export const ChangeReviewPage: React.FC = () => {
       
       // Push if requested
       if (shouldPush && successfulRepos.length > 0) {
-        const pushResult = await changeReviewService.batchPush(successfulRepos);
+        const pushResult = await reviewService.batchPush(successfulRepos);
         pushResult.results.forEach(res => {
           if (res.success) {
             toast.success(`Successfully pushed ${res.repository} to origin/${res.branch}`);

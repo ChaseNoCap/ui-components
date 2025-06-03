@@ -31,7 +31,11 @@ interface Session {
   };
 }
 
-export const ClaudeConsole: React.FC = () => {
+// Re-export GraphQL version as default
+export { ClaudeConsoleGraphQL as ClaudeConsole } from './ClaudeConsoleGraphQL';
+
+// Keep original as legacy
+export const ClaudeConsoleLegacy: React.FC = () => {
   console.log('ClaudeConsole component mounting');
   
   const { theme } = useTheme();

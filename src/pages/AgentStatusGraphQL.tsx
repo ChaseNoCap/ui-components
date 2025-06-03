@@ -2,13 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useToast } from '../components/Toast/useToast';
 import { Loader2, RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, RotateCcw } from 'lucide-react';
 import { RunList } from '../components/AgentStatus/RunList';
 import { RunDetails } from '../components/AgentStatus/RunDetails';
 import { RunStatistics } from '../components/AgentStatus/RunStatistics';
 import { formatDistanceToNow } from 'date-fns';
+import { 
+  useAgentRuns, 
+  useRunStatistics, 
+  useRetryAgentRun, 
+  useRetryFailedRuns,
+  useAgentRunProgress 
+} from '../hooks/useGraphQL';
+import { useSubscription, gql } from '@apollo/client';
+import { AGENT_RUN_PROGRESS_SUBSCRIPTION } from '../graphql/operations';
 
 // Types matching GraphQL schema
 interface AgentRun {
@@ -65,96 +73,105 @@ interface RunStatisticsData {
   successRate: number;
 }
 
-const AgentStatus: React.FC = () => {
+const AgentStatusGraphQL: React.FC = () => {
   const { toast } = useToast();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [statistics, setStatistics] = useState<RunStatisticsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<RunStatus | 'ALL'>('ALL');
   const [repositoryFilter, setRepositoryFilter] = useState<string>('ALL');
 
-  // Load runs on mount
-  useEffect(() => {
-    loadRuns();
-    loadStatistics();
-  }, [statusFilter, repositoryFilter]);
+  // GraphQL queries
+  const { 
+    data: runsData, 
+    loading: runsLoading, 
+    error: runsError, 
+    refetch: refetchRuns 
+  } = useAgentRuns({
+    status: statusFilter !== 'ALL' ? statusFilter : undefined,
+    repository: repositoryFilter !== 'ALL' ? repositoryFilter : undefined,
+    limit: 50,
+  });
 
-  const loadRuns = async () => {
-    try {
-      setLoading(true);
+  // Poll for updates if there are running jobs
+  const hasRunningJobs = runs.some(run => 
+    run.status === RunStatus.RUNNING || 
+    run.status === RunStatus.QUEUED || 
+    run.status === RunStatus.RETRYING
+  );
+  
+  useEffect(() => {
+    if (hasRunningJobs) {
+      const interval = setInterval(() => {
+        refetchRuns();
+        refetchStats();
+      }, 3000); // Poll every 3 seconds
       
-      // TODO: Replace with GraphQL query
-      const params = new URLSearchParams();
-      if (statusFilter !== 'ALL') params.append('status', statusFilter);
-      if (repositoryFilter !== 'ALL') params.append('repository', repositoryFilter);
-      
-      const response = await fetch(`http://localhost:3003/api/claude/runs?${params}`);
-      if (!response.ok) throw new Error('Failed to load runs');
-      
-      const data = await response.json();
-      setRuns(data.runs || []);
-      
-      // Select first run if none selected
-      if (!selectedRunId && data.runs.length > 0) {
-        setSelectedRunId(data.runs[0].id);
-      }
-    } catch (error) {
-      console.error('Failed to load runs:', error);
+      return () => clearInterval(interval);
+    }
+  }, [hasRunningJobs, refetchRuns, refetchStats]);
+
+  const { 
+    data: statsData, 
+    loading: statsLoading, 
+    refetch: refetchStats 
+  } = useRunStatistics();
+
+  // GraphQL mutations
+  const { retry: retryRun } = useRetryAgentRun();
+  const { retryBatch } = useRetryFailedRuns();
+
+  // Extract runs from query data
+  const runs = runsData?.agentRuns?.runs || [];
+  const statistics = statsData?.runStatistics;
+
+  // Select first run if none selected
+  useEffect(() => {
+    if (!selectedRunId && runs.length > 0) {
+      setSelectedRunId(runs[0].id);
+    }
+  }, [runs, selectedRunId]);
+
+  // Show error toast if query fails
+  useEffect(() => {
+    if (runsError) {
       toast({
         title: 'Error loading runs',
-        description: 'Failed to fetch agent run history',
+        description: runsError.message,
         variant: 'destructive',
       });
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const loadStatistics = async () => {
-    try {
-      const response = await fetch('http://localhost:3003/api/claude/runs/statistics');
-      if (!response.ok) throw new Error('Failed to load statistics');
-      
-      const data = await response.json();
-      setStatistics(data);
-    } catch (error) {
-      console.error('Failed to load statistics:', error);
-    }
-  };
+  }, [runsError, toast]);
 
   const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([loadRuns(), loadStatistics()]);
-    setRefreshing(false);
-    
-    toast({
-      title: 'Refreshed',
-      description: 'Agent run data updated',
-    });
+    try {
+      await Promise.all([refetchRuns(), refetchStats()]);
+      toast({
+        title: 'Refreshed',
+        description: 'Agent run data updated',
+      });
+    } catch (error) {
+      toast({
+        title: 'Refresh failed',
+        description: 'Could not refresh data',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleRetryRun = async (runId: string) => {
     try {
-      const response = await fetch(`http://localhost:3003/api/claude/runs/${runId}/retry`, {
-        method: 'POST',
-      });
+      const result = await retryRun(runId);
       
-      if (!response.ok) throw new Error('Failed to retry run');
-      
-      const newRun = await response.json();
-      
-      toast({
-        title: 'Run retried',
-        description: `Created new run ${newRun.id}`,
-      });
-      
-      // Refresh runs
-      await loadRuns();
-      
-      // Select the new run
-      setSelectedRunId(newRun.id);
+      if (result.data?.retryAgentRun) {
+        const newRun = result.data.retryAgentRun;
+        
+        toast({
+          title: 'Run retried',
+          description: `Created new run ${newRun.id}`,
+        });
+        
+        // Select the new run
+        setSelectedRunId(newRun.id);
+      }
     } catch (error) {
       toast({
         title: 'Retry failed',
@@ -166,22 +183,14 @@ const AgentStatus: React.FC = () => {
 
   const handleBatchRetry = async (runIds: string[]) => {
     try {
-      const response = await fetch('http://localhost:3003/api/claude/runs/retry-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runIds }),
-      });
+      const result = await retryBatch(runIds);
       
-      if (!response.ok) throw new Error('Failed to retry runs');
-      
-      const result = await response.json();
-      
-      toast({
-        title: 'Batch retry complete',
-        description: `Retried ${result.count} runs`,
-      });
-      
-      await loadRuns();
+      if (result.data?.retryFailedRuns) {
+        toast({
+          title: 'Batch retry complete',
+          description: `Retried ${result.data.retryFailedRuns.length} runs`,
+        });
+      }
     } catch (error) {
       toast({
         title: 'Batch retry failed',
@@ -227,7 +236,56 @@ const AgentStatus: React.FC = () => {
 
   const selectedRun = runs.find(run => run.id === selectedRunId);
 
-  if (loading) {
+  // Subscribe to progress updates for running jobs
+  const runningRuns = runs.filter(run => run.status === RunStatus.RUNNING);
+  
+  // Subscribe to progress for selected run if it's running
+  const { progress: selectedRunProgress } = useAgentRunProgress(
+    selectedRun?.status === RunStatus.RUNNING ? selectedRun.id : undefined
+  );
+
+  // Subscribe to all running runs for live updates
+  useSubscription(
+    gql`
+      subscription AllAgentRunUpdates {
+        allAgentRunUpdates {
+          id
+          status
+          completedAt
+          duration
+          output {
+            message
+            confidence
+            tokensUsed
+          }
+          error {
+            code
+            message
+          }
+        }
+      }
+    `,
+    {
+      onSubscriptionData: ({ subscriptionData }) => {
+        if (subscriptionData.data?.allAgentRunUpdates) {
+          // Refetch to update the list with new data
+          refetchRuns();
+          
+          // If this is our selected run, we might want to show a toast
+          const update = subscriptionData.data.allAgentRunUpdates;
+          if (update.id === selectedRunId && update.status === RunStatus.SUCCESS) {
+            toast({
+              title: 'Run completed',
+              description: `Run ${update.id} completed successfully`,
+            });
+          }
+        }
+      },
+      skip: runningRuns.length === 0, // Only subscribe if there are running runs
+    }
+  );
+
+  if (runsLoading && !runsData) {
     return (
       <div className="container mx-auto py-8">
         <div className="flex items-center justify-center">
@@ -243,15 +301,15 @@ const AgentStatus: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold">Agent Status</h1>
           <p className="text-muted-foreground mt-2">
-            Monitor Claude agent runs and performance
+            Monitor Claude agent runs and performance (GraphQL-powered)
           </p>
         </div>
         <Button
           onClick={handleRefresh}
-          disabled={refreshing}
+          disabled={runsLoading || statsLoading}
           size="sm"
         >
-          {refreshing ? (
+          {(runsLoading || statsLoading) ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <RefreshCw className="h-4 w-4" />
@@ -275,7 +333,7 @@ const AgentStatus: React.FC = () => {
             <CardHeader>
               <CardTitle>Run History</CardTitle>
               <CardDescription>
-                {runs.length} runs found
+                {runs.length} runs found (Total: {runsData?.agentRuns?.total || 0})
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -299,6 +357,7 @@ const AgentStatus: React.FC = () => {
             <RunDetails
               run={selectedRun}
               onRetry={() => handleRetryRun(selectedRun.id)}
+              progress={selectedRunProgress}
             />
           ) : (
             <Card>
@@ -311,8 +370,27 @@ const AgentStatus: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Failed Runs Batch Retry */}
+      {statistics && statistics.byStatus.FAILED > 0 && (
+        <div className="fixed bottom-4 right-4">
+          <Button
+            onClick={() => {
+              const failedRunIds = runs
+                .filter(run => run.status === RunStatus.FAILED)
+                .map(run => run.id);
+              handleBatchRetry(failedRunIds);
+            }}
+            variant="outline"
+            className="shadow-lg"
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Retry All Failed ({statistics.byStatus.FAILED})
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
 
-export default AgentStatus;
+export default AgentStatusGraphQL;

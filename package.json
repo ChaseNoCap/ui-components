@@ -7,9 +7,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "vite",
-    "dev:full": "concurrently \"npm run dev\" \"npm run git-server\" \"npm run claude-api-server\" \"cd ../.. && npm run dev:graphql\"",
-    "git-server": "node scripts/git-server.js",
-    "claude-api-server": "node scripts/claude-api-server.js",
+    "dev:full": "concurrently \"npm run dev\" \"cd ../../services && ./start-yoga-services.sh\"",
+    "dev:full:verbose": "concurrently -n \"UI,GRAPHQL\" -c \"blue,green\" \"npm run dev\" \"cd ../../services && ./start-yoga-services.sh\"",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",
@@ -34,6 +33,13 @@
     "subscriptions-transport-ws": "^0.11.0"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^5.0.6",
+    "@graphql-codegen/client-preset": "^4.8.1",
+    "@graphql-codegen/introspection": "^4.0.3",
+    "@graphql-codegen/typed-document-node": "^5.1.1",
+    "@graphql-codegen/typescript": "^4.1.6",
+    "@graphql-codegen/typescript-operations": "^4.6.1",
+    "@graphql-codegen/typescript-react-apollo": "^4.3.3",
     "@tanstack/react-query-devtools": "^5.77.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",

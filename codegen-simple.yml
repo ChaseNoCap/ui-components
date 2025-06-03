@@ -1,19 +1,11 @@
 overwrite: true
 schema: http://localhost:3000/graphql
-documents:
-  - "src/**/*.{ts,tsx}"
-  - "!src/generated/**/*"
-config:
-  skipDocumentsValidation: true
 generates:
-  src/generated/graphql.ts:
+  src/generated/graphql-types.ts:
     plugins:
       - typescript
-      - typescript-operations
     config:
       avoidOptionals: true
-      addTypename: true
-      skipTypename: true
       strictScalars: true
       scalars:
         Date: string
@@ -35,8 +27,3 @@ generates:
         federation__FieldSet: string
         federation__Scope: string
         federation__Policy: string
-  src/generated/introspection.json:
-    plugins:
-      - introspection
-    config:
-      minify: true

@@ -2,6 +2,9 @@ import { createLogger } from '../utils/logger';
 
 const logger = createLogger('gitService');
 
+// Re-export the GraphQL version as the preferred implementation
+export { gitServiceGraphQL as gitServiceNew } from './gitServiceGraphQL';
+
 export interface GitStatus {
   file: string;
   status: 'M' | 'A' | 'D' | '??' | 'R' | 'C' | 'U';

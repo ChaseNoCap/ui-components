@@ -56,10 +56,6 @@ export const Navigation: React.FC = () => {
           label: 'Repository Status',
           path: '/tools/repository-status',
         },
-        {
-          label: 'Manual Commit',
-          path: '/tools/manual-commit',
-        },
       ],
     },
     {

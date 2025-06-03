@@ -1,5 +1,9 @@
-import { gql } from '@apollo/client';
 import { apolloClient as client } from '../lib/apollo-client';
+import { gql } from '@apollo/client';
+import { 
+  GENERATE_COMMIT_MESSAGES_MUTATION,
+  BATCH_COMMIT_MUTATION
+} from '../graphql/operations';
 import type { 
   ChangeReviewReport, 
   RepositoryChangeData, 
@@ -7,9 +11,9 @@ import type {
 } from './changeReviewService';
 import type { LogEntry } from '../components/LoadingStates/ProgressLog';
 
-// GraphQL Queries and Mutations
+// GraphQL Queries
 const SCAN_ALL_DETAILED = gql`
-  query ScanAllDetailed {
+  query ServiceScanAllDetailed {
     scanAllDetailed {
       repositories {
         name
@@ -76,32 +80,10 @@ const SCAN_ALL_DETAILED = gql`
   }
 `;
 
-const GENERATE_COMMIT_MESSAGES = gql`
-  mutation GenerateCommitMessages($input: BatchCommitMessageInput!) {
-    generateCommitMessages(input: $input) {
-      totalRepositories
-      successCount
-      results {
-        repositoryPath
-        repositoryName
-        success
-        message
-        error
-        confidence
-        commitType
-      }
-      totalTokenUsage {
-        inputTokens
-        outputTokens
-        estimatedCost
-      }
-      executionTime
-    }
-  }
-`;
+// Using GENERATE_COMMIT_MESSAGES_MUTATION from operations.ts
 
 const GENERATE_EXECUTIVE_SUMMARY = gql`
-  mutation GenerateExecutiveSummary($input: ExecutiveSummaryInput!) {
+  mutation ServiceGenerateExecutiveSummary($input: ExecutiveSummaryInput!) {
     generateExecutiveSummary(input: $input) {
       success
       summary
@@ -122,35 +104,7 @@ const GENERATE_EXECUTIVE_SUMMARY = gql`
   }
 `;
 
-const BATCH_COMMIT = gql`
-  mutation BatchCommit($input: BatchCommitInput!) {
-    batchCommit(input: $input) {
-      totalRepositories
-      successCount
-      failureCount
-      results {
-        path
-        name
-        result {
-          success
-          commitHash
-          message
-          error
-          filesCommitted
-        }
-      }
-      pushAttempted
-      pushResults {
-        path
-        success
-        remote
-        branch
-        error
-        summary
-      }
-    }
-  }
-`;
+// Using BATCH_COMMIT_MUTATION from operations.ts
 
 export class GraphQLChangeReviewService {
   private logEntries: LogEntry[] = [];
@@ -364,16 +318,35 @@ export class GraphQLChangeReviewService {
     }
 
     try {
+      // Calculate approximate token count (rough estimate: 4 chars = 1 token)
+      const estimatedTokens = reposWithChanges.reduce((total, repo) => {
+        const diffLength = (repo.gitDiff.staged || '').length + (repo.gitDiff.unstaged || '').length;
+        return total + Math.floor(diffLength / 4);
+      }, 0);
+      
+      this.log(`📊 Estimated token count: ${estimatedTokens.toLocaleString()}`, 'info');
+      
+      // If token count is too high, use file lists instead of diffs
+      const useFileListsOnly = estimatedTokens > 150000;
+      
+      if (useFileListsOnly) {
+        this.log(`⚠️ Token count exceeds 150k limit. Using file lists instead of full diffs to reduce token usage.`, 'info');
+      }
+      
       // Build input for GraphQL mutation matching the expected schema
       const input = {
         repositories: reposWithChanges.map(repo => ({
           path: repo.path,
           name: repo.name,
-          // Combine staged and unstaged diffs
-          diff: [repo.gitDiff.staged, repo.gitDiff.unstaged].filter(d => d).join('\n\n'),
+          // Use diffs only if under token limit, otherwise send summary
+          diff: useFileListsOnly 
+            ? `Files changed (${repo.statistics.totalFiles}):\n${repo.changes.map(c => `${c.status} ${c.file}`).join('\n')}`
+            : [repo.gitDiff.staged, repo.gitDiff.unstaged].filter(d => d).join('\n\n'),
           filesChanged: repo.changes.map(c => c.file),
           recentCommits: repo.recentCommits.slice(0, 5).map(c => c.message),
-          context: `Repository: ${repo.name}, Branch: ${repo.branch.current}, ${repo.statistics.totalFiles} files changed`
+          context: `Repository: ${repo.name}, Branch: ${repo.branch.current}, ${repo.statistics.totalFiles} files changed${
+            useFileListsOnly ? ' (using file list mode due to large diff size)' : ''
+          }`
         })),
         styleGuide: {
           format: 'conventional',
@@ -388,11 +361,35 @@ export class GraphQLChangeReviewService {
       this.log('🚀 Sending changes to AI for commit message generation...', 'info');
       this.log(`📄 Context includes: ${input.repositories.reduce((sum, r) => sum + r.filesChanged.length, 0)} files, ${input.repositories.length} repositories`, 'info');
 
-      // Use the gateway client
-      const response = await client.mutate({
-        mutation: GENERATE_COMMIT_MESSAGES,
-        variables: { input }
-      });
+      // Add timeout wrapper similar to executive summary
+      let response;
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Commit message generation timed out after 2 minutes'));
+          }, 120000); // 2 minutes timeout
+        });
+
+        const mutationPromise = client.mutate({
+          mutation: GENERATE_COMMIT_MESSAGES_MUTATION,
+          variables: { input },
+          fetchPolicy: 'no-cache' // Ensure fresh request
+        });
+
+        // Race between the mutation and the timeout
+        response = await Promise.race([
+          mutationPromise,
+          timeoutPromise
+        ]) as any;
+        
+        this.log('✅ Received response from AI service', 'info');
+      } catch (error: any) {
+        if (error.message && error.message.includes('timed out')) {
+          this.log('⏰ Commit message generation timed out after 2 minutes', 'error');
+          throw error;
+        }
+        throw error;
+      }
 
       console.log('GraphQL mutation response:', response);
       
@@ -446,7 +443,66 @@ export class GraphQLChangeReviewService {
       });
     } catch (error) {
       console.error('Error generating commit messages:', error);
-      this.log(`❌ Failed to generate AI commit messages: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.log(`❌ Failed to generate AI commit messages: ${errorMessage}`, 'error');
+      
+      // If the error is due to token limit and we haven't already tried file lists
+      if (errorMessage.includes('token') && !input.repositories[0].diff.startsWith('Files changed')) {
+        this.log('🔄 Retrying with file lists only to reduce token usage...', 'info');
+        
+        try {
+          // Rebuild input with file lists only
+          const retryInput = {
+            ...input,
+            repositories: reposWithChanges.map(repo => ({
+              ...input.repositories.find(r => r.path === repo.path)!,
+              diff: `Files changed (${repo.statistics.totalFiles}):\n${repo.changes.map(c => `${c.status} ${c.file}`).join('\n')}`,
+              context: `Repository: ${repo.name}, Branch: ${repo.branch.current}, ${repo.statistics.totalFiles} files changed (retry with file list mode)`
+            }))
+          };
+          
+          const retryResponse = await client.mutate({
+            mutation: GENERATE_COMMIT_MESSAGES_MUTATION,
+            variables: { input: retryInput },
+            fetchPolicy: 'no-cache'
+          });
+          
+          if (retryResponse.data?.generateCommitMessages) {
+            const result = retryResponse.data.generateCommitMessages;
+            this.log(`✅ Retry successful! Generated ${result.successCount}/${result.totalRepositories} commit messages with file lists`, 'success');
+            
+            // Map results back to repositories
+            let processedCount = 0;
+            return repositories.map(repo => {
+              const commitResult = result.results.find(
+                (r: any) => r.repositoryName === repo.name || r.repositoryPath === repo.path
+              );
+              
+              if (commitResult && commitResult.success) {
+                processedCount++;
+                this.log(`✓ ${repo.name}: Generated ${commitResult.commitType || 'commit'} message`, 'success');
+                onProgress?.({
+                  stage: 'generating',
+                  message: `Created commit message for ${repo.name}`,
+                  current: processedCount,
+                  total: reposWithChanges.length
+                });
+                
+                return {
+                  ...repo,
+                  generatedCommitMessage: commitResult.message
+                };
+              }
+              
+              return repo;
+            });
+          }
+        } catch (retryError) {
+          console.error('Retry with file lists also failed:', retryError);
+          this.log(`❌ Retry with file lists failed: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`, 'error');
+        }
+      }
+      
       this.log('🔄 Falling back to pattern-based commit message generation...', 'info');
       // Fallback to basic generation
       const fallbackRepos = this.generateFallbackCommitMessages(repositories, onProgress);
@@ -624,19 +680,17 @@ export class GraphQLChangeReviewService {
   async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<any> {
     try {
       const input = {
-        repositories: commits.map(commit => ({
-          path: commit.repoPath,
+        commits: commits.map(commit => ({
+          repository: commit.repoPath,
           message: commit.message,
           files: [], // Empty means commit all
-          amend: false,
-          noVerify: false
+          stageAll: true
         })),
-        continueOnError: true,
-        pushAfterCommit: false
+        continueOnError: true
       };
 
       const { data } = await client.mutate({
-        mutation: BATCH_COMMIT,
+        mutation: BATCH_COMMIT_MUTATION,
         variables: { input }
       });
 
@@ -1002,9 +1056,9 @@ export const graphqlChangeReviewService = {
       const commits = await service.batchCommit([{ repoPath: repositoryPath, message: commitMessage }]);
       const result = commits.results?.[0];
       return {
-        success: result?.result?.success || false,
-        commitHash: result?.result?.commitHash,
-        error: result?.result?.error
+        success: result?.success || false,
+        commitHash: result?.commitHash,
+        error: result?.error
       };
     } catch (error) {
       return {
@@ -1021,6 +1075,21 @@ export const graphqlChangeReviewService = {
     return {
       success: false,
       error: 'Push functionality not yet implemented in GraphQL'
+    };
+  },
+  
+  async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<any> {
+    return service.batchCommit(commits);
+  },
+  
+  async batchPush(repoPaths: string[]): Promise<any> {
+    // TODO: Implement batch push functionality when available in GraphQL
+    return {
+      results: repoPaths.map(path => ({
+        repository: path.split('/').pop() || path,
+        success: false,
+        error: 'Push functionality not yet implemented in GraphQL'
+      }))
     };
   }
 };
