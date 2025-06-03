@@ -199,7 +199,7 @@ export const RUN_STATISTICS_QUERY = gql`
 // ============================================
 
 export const EXECUTE_COMMAND_MUTATION = gql`
-  mutation ExecuteCommand($input: ClaudeExecuteInput!) {
+  mutation ExecuteCommand($input: Claude_ExecuteInput!) {
     executeCommand(input: $input) {
       sessionId
       success
@@ -215,7 +215,7 @@ export const KILL_SESSION_MUTATION = gql`
 `;
 
 export const COMMIT_CHANGES_MUTATION = gql`
-  mutation CommitChanges($input: CommitInput!) {
+  mutation CommitChanges($input: Repo_CommitInput!) {
     commitChanges(input: $input) {
       success
       hash
@@ -229,7 +229,7 @@ export const COMMIT_CHANGES_MUTATION = gql`
 `;
 
 export const BATCH_COMMIT_MUTATION = gql`
-  mutation BatchCommit($input: BatchCommitInput!) {
+  mutation BatchCommit($input: Repo_BatchCommitInput!) {
     batchCommit(input: $input) {
       totalRepositories
       successCount
@@ -247,7 +247,7 @@ export const BATCH_COMMIT_MUTATION = gql`
 `;
 
 export const GENERATE_COMMIT_MESSAGES_MUTATION = gql`
-  mutation GenerateCommitMessages($input: BatchCommitMessageInput!) {
+  mutation GenerateCommitMessages($input: Claude_BatchCommitMessageInput!) {
     generateCommitMessages(input: $input) {
       totalRepositories
       successCount
@@ -289,7 +289,7 @@ export const RETRY_FAILED_RUNS_MUTATION = gql`
 `;
 
 export const EXECUTE_GIT_COMMAND_MUTATION = gql`
-  mutation ExecuteGitCommand($input: GitCommandInput!) {
+  mutation ExecuteGitCommand($input: Repo_GitCommandInput!) {
     executeGitCommand(input: $input) {
       success
       output

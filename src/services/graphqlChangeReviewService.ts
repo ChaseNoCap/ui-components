@@ -83,7 +83,7 @@ const SCAN_ALL_DETAILED = gql`
 // Using GENERATE_COMMIT_MESSAGES_MUTATION from operations.ts
 
 const GENERATE_EXECUTIVE_SUMMARY = gql`
-  mutation ServiceGenerateExecutiveSummary($input: ExecutiveSummaryInput!) {
+  mutation ServiceGenerateExecutiveSummary($input: Claude_ExecutiveSummaryInput!) {
     generateExecutiveSummary(input: $input) {
       success
       summary
