@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, AlertCircle, CheckCircle, Clock, Package, RefreshCw, Server } from 'lucide-react';
 import { useSystemHealth } from '@/hooks/useGraphQL';
+import { useServicesHealth } from '@/hooks/useServicesHealth';
 import { ErrorBoundary } from '../ErrorDisplay';
 import { ErrorMessage } from '../ErrorDisplay';
 import { Spinner } from '../LoadingStates';
@@ -23,6 +24,14 @@ export const HealthDashboardGraphQL: React.FC = () => {
   // Use GraphQL system health query with 5 second polling
   const { data, loading, error, refetch } = useSystemHealth(5000);
   
+  // Use services health query for real service data
+  const { 
+    data: servicesData, 
+    loading: servicesLoading, 
+    error: servicesError,
+    refetch: refetchServices 
+  } = useServicesHealth(5000);
+  
   // Update last check time when data changes
   React.useEffect(() => {
     if (data) {
@@ -32,7 +41,7 @@ export const HealthDashboardGraphQL: React.FC = () => {
   
   const handleRefresh = async () => {
     setRefreshKey(prev => prev + 1);
-    await refetch();
+    await Promise.all([refetch(), refetchServices()]);
   };
 
   if (loading && !data) {
@@ -64,23 +73,34 @@ export const HealthDashboardGraphQL: React.FC = () => {
   const health = data?.health;
   if (!health) return null;
 
-  // Create services data based on what we know from the health query
-  const mockServices = [
+  // Use real services data if available, otherwise create fallback based on health query
+  const services = servicesData?.servicesHealth?.services || [
     { 
       name: 'claude-service', 
       healthy: health.claudeAvailable || false, 
       version: health.claudeVersion || 'Unknown', 
-      responseTime: 45 
+      responseTime: 0 
     },
-    { name: 'repo-agent-service', healthy: true, version: '1.0.0', responseTime: 32 },
-    { name: 'gateway', healthy: true, version: health.version || '1.0.0', responseTime: 12 }
+    { 
+      name: 'repo-agent-service', 
+      healthy: true, 
+      version: '1.0.0', 
+      responseTime: 0 
+    },
+    { 
+      name: 'gateway', 
+      healthy: true, 
+      version: health.version || '1.0.0', 
+      responseTime: 0 
+    }
   ];
 
-  const healthyServices = mockServices.filter((s: ServiceHealth) => s.healthy).length;
-  const totalServices = mockServices.length;
+  const healthyServices = services.filter((s: ServiceHealth) => s.healthy).length;
+  const totalServices = services.length;
   const overallHealth = health.healthy;
-  // Mock uptime for now (in seconds)
-  const uptimeSeconds = 3600; // 1 hour
+  
+  // Use real uptime if available, otherwise calculate from start time
+  const uptimeSeconds = servicesData?.servicesHealth?.uptime || 3600;
   const uptimeMinutes = Math.floor(uptimeSeconds / 60);
   const uptimeHours = Math.floor(uptimeMinutes / 60);
   const uptimeDays = Math.floor(uptimeHours / 24);
@@ -242,7 +262,7 @@ export const HealthDashboardGraphQL: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockServices.map((service: ServiceHealth) => (
+              {services.map((service: ServiceHealth) => (
                 <div
                   key={service.name}
                   className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700"

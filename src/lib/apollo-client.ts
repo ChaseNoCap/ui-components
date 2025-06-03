@@ -37,7 +37,7 @@ const wsLink = new GraphQLWsLink(
   })
 );
 
-// Retry link for network failures
+// Enhanced retry link with federation awareness
 const retryLink = new RetryLink({
   delay: {
     initial: 300,
@@ -46,36 +46,121 @@ const retryLink = new RetryLink({
   },
   attempts: {
     max: 5,
-    retryIf: (error, _operation) => {
+    retryIf: (error, operation) => {
+      // Don't retry on GraphQL validation errors (federation type mismatches)
+      if (error?.graphQLErrors?.some(e => e.extensions?.code === 'GRAPHQL_VALIDATION_FAILED')) {
+        return false;
+      }
+      
+      // Don't retry on authentication errors
+      if (error?.graphQLErrors?.some(e => e.extensions?.code === 'UNAUTHENTICATED')) {
+        return false;
+      }
+      
       // Retry on network errors
-      return !!error && error.networkError !== null;
+      if (error?.networkError) {
+        // Special handling for timeout errors - limit retries
+        if (error.networkError.message?.includes('timeout')) {
+          const attempt = (operation as any).attempt || 0;
+          return attempt < 2; // Only retry timeouts twice
+        }
+        return true;
+      }
+      
+      // Retry on service unavailable errors
+      if (error?.graphQLErrors?.some(e => e.extensions?.code === 'SERVICE_UNAVAILABLE')) {
+        return true;
+      }
+      
+      return false;
     }
   }
 });
 
-// Error handling link
+// Error handling link with enhanced federation support
 const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
   if (graphQLErrors) {
     graphQLErrors.forEach(({ message, locations, path, extensions }) => {
-      console.error(
-        `[GraphQL error]: Message: ${message}, Location: ${locations}, Path: ${path}`,
+      // Enhanced error logging with federation context
+      const errorContext = {
+        operation: operation.operationName,
+        variables: operation.variables,
         extensions
-      );
+      };
       
-      // Handle specific error codes
-      if (extensions?.code === 'UNAUTHENTICATED') {
+      // Handle federation-specific errors
+      if (extensions?.code === 'GRAPHQL_VALIDATION_FAILED') {
+        // Provide helpful messages for common federation type mismatches
+        if (message.includes('Unknown type')) {
+          const typeMatch = message.match(/Unknown type "([^"]+)"/);
+          const suggestedTypes = message.match(/Did you mean "([^"]+)"/g);
+          
+          console.error(
+            `[Federation Type Error]: Type '${typeMatch?.[1]}' not found in schema.`,
+            suggestedTypes ? `Suggested types: ${suggestedTypes.join(', ')}` : '',
+            errorContext
+          );
+          
+          // Emit custom event for UI to handle
+          window.dispatchEvent(new CustomEvent('graphql:federation-error', {
+            detail: {
+              type: 'TYPE_MISMATCH',
+              invalidType: typeMatch?.[1],
+              suggestions: suggestedTypes,
+              operation: operation.operationName
+            }
+          }));
+        }
+      } else if (extensions?.code === 'UNAUTHENTICATED') {
         // Redirect to login or refresh token
         window.location.href = '/login';
+      } else if (extensions?.code === 'SERVICE_UNAVAILABLE') {
+        console.error(
+          `[Service Error]: GraphQL service unavailable for operation '${operation.operationName}'`,
+          errorContext
+        );
+        
+        // Emit event for UI to show service status
+        window.dispatchEvent(new CustomEvent('graphql:service-error', {
+          detail: {
+            service: extensions.service,
+            operation: operation.operationName
+          }
+        }));
+      } else {
+        console.error(
+          `[GraphQL error]: ${message}`,
+          { locations, path, ...errorContext }
+        );
       }
     });
   }
 
   if (networkError) {
-    console.error(`[Network error]: ${networkError}`);
+    const isTimeout = networkError.message?.includes('timeout');
+    const isConnectionRefused = networkError.message?.includes('ECONNREFUSED');
     
-    // Handle offline scenarios
-    if (!navigator.onLine) {
+    if (isTimeout) {
+      console.error(`[Network Timeout]: Operation '${operation.operationName}' timed out`);
+      
+      // Emit timeout event
+      window.dispatchEvent(new CustomEvent('graphql:timeout', {
+        detail: { operation: operation.operationName }
+      }));
+    } else if (isConnectionRefused) {
+      console.error(`[Connection Error]: Cannot connect to GraphQL server at ${GRAPHQL_ENDPOINT}`);
+      
+      // Emit connection error event
+      window.dispatchEvent(new CustomEvent('graphql:connection-error', {
+        detail: { endpoint: GRAPHQL_ENDPOINT }
+      }));
+    } else if (!navigator.onLine) {
       console.log('App is offline, will retry when online');
+      
+      // Emit offline event
+      window.dispatchEvent(new CustomEvent('graphql:offline'));
+    } else {
+      console.error(`[Network error]: ${networkError}`);
     }
   }
 });
