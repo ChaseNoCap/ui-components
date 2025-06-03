@@ -197,3 +197,87 @@ export const GITHUB_GRAPHQL_QUERY = gql`
     github(query: $query, variables: $variables)
   }
 `;
+
+// Direct GitHub API queries (from our custom gateway)
+export const GET_GITHUB_USER = gql`
+  query GetGitHubUser {
+    githubUser {
+      login
+      name
+      avatarUrl
+      bio
+      company
+      location
+      publicRepos
+    }
+  }
+`;
+
+export const LIST_GITHUB_REPOSITORIES = gql`
+  query ListGitHubRepositories($perPage: Int = 30, $page: Int = 1) {
+    githubRepositories(perPage: $perPage, page: $page) {
+      id
+      name
+      fullName
+      description
+      private
+      fork
+      createdAt
+      updatedAt
+      pushedAt
+      homepage
+      size
+      stargazersCount
+      watchersCount
+      language
+      forksCount
+      openIssuesCount
+      defaultBranch
+      topics
+      owner {
+        login
+        avatarUrl
+      }
+    }
+  }
+`;
+
+export const GET_GITHUB_WORKFLOWS = gql`
+  query GetGitHubWorkflows($owner: String!, $repo: String!) {
+    githubWorkflows(owner: $owner, repo: $repo) {
+      id
+      name
+      path
+      state
+    }
+  }
+`;
+
+export const GET_GITHUB_WORKFLOW_RUNS = gql`
+  query GetGitHubWorkflowRuns($owner: String!, $repo: String!, $perPage: Int = 10) {
+    githubWorkflowRuns(owner: $owner, repo: $repo, perPage: $perPage) {
+      id
+      name
+      headBranch
+      headSha
+      status
+      conclusion
+      workflowId
+      url
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const TRIGGER_GITHUB_WORKFLOW = gql`
+  mutation TriggerGitHubWorkflow($owner: String!, $repo: String!, $workflowId: String!, $ref: String = "main") {
+    triggerWorkflow(owner: $owner, repo: $repo, workflowId: $workflowId, ref: $ref)
+  }
+`;
+
+export const CANCEL_GITHUB_WORKFLOW_RUN = gql`
+  mutation CancelGitHubWorkflowRun($owner: String!, $repo: String!, $runId: Int!) {
+    cancelWorkflowRun(owner: $owner, repo: $repo, runId: $runId)
+  }
+`;
