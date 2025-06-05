@@ -10,7 +10,8 @@ import { useToastContext } from '../Toast';
 import { claudeSessionManager } from '../../services/claudeSessionManager';
 import { claudeServiceGraphQL } from '../../services/claudeServiceGraphQL';
 import { format } from 'date-fns';
-import { useMutation, useQuery } from '@apollo/client';
+import { useMutation, useQuery, useLazyQuery } from '@apollo/client';
+import { GET_SESSION } from '../../graphql/claude-operations';
 import {
   FORK_SESSION,
   CREATE_SESSION_TEMPLATE,
@@ -80,6 +81,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   const [shareSessionMutation] = useMutation(SHARE_SESSION);
 
   // GraphQL Queries
+  const [getSessionDetails] = useLazyQuery(GET_SESSION);
   const { data: templatesData, loading: templatesLoading } = useQuery(GET_SESSION_TEMPLATES, {
     skip: !showTemplates
   });
@@ -104,6 +106,19 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   // Load sessions on mount
   useEffect(() => {
     loadSessions();
+    
+    // Check for sessionId in URL query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('sessionId');
+    console.log('URL sessionId:', sessionId);
+    if (sessionId) {
+      // Load the specific session after sessions are loaded
+      // Increased delay to ensure GraphQL client is ready
+      setTimeout(() => {
+        console.log('Loading session from URL param after delay...');
+        loadSession(sessionId);
+      }, 1000);
+    }
     
     // Cleanup on unmount
     return () => {
@@ -133,15 +148,95 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   };
 
   const loadSession = async (sessionId: string) => {
+    console.log('Loading session:', sessionId);
     try {
-      const session = await claudeSessionManager.getSession(sessionId);
-      if (session) {
+      // First try to load from server (for forked sessions)
+      console.log('Fetching session from server...');
+      const { data: serverData, error: queryError } = await getSessionDetails({
+        variables: { id: sessionId },
+        fetchPolicy: 'network-only' // Force network request
+      });
+      
+      console.log('Server response:', serverData);
+      console.log('Query error:', queryError);
+      
+      if (serverData?.session) {
+        const serverSession = serverData.session;
+        
+        // Convert server session to local format
+        const session: Session = {
+          id: serverSession.id,
+          name: serverSession.metadata?.name || `Session ${new Date(serverSession.createdAt).toLocaleTimeString()}`,
+          createdAt: new Date(serverSession.createdAt),
+          lastAccessed: new Date(serverSession.lastActivity),
+          messages: []
+        };
+        
+        // Convert history to messages
+        console.log('Server session history:', serverSession.history);
+        if (serverSession.history && serverSession.history.length > 0) {
+          const messages: ConsoleMessage[] = [];
+          serverSession.history.forEach((entry: any) => {
+            if (entry.prompt) {
+              messages.push({
+                id: crypto.randomUUID(),
+                type: 'user',
+                content: entry.prompt,
+                timestamp: new Date(entry.timestamp)
+              });
+            }
+            if (entry.response) {
+              messages.push({
+                id: crypto.randomUUID(),
+                type: 'assistant',
+                content: entry.response,
+                timestamp: new Date(entry.timestamp),
+                metadata: {
+                  duration: entry.executionTime,
+                  sessionId: serverSession.id
+                }
+              });
+            }
+          });
+          setMessages(messages);
+        } else {
+          setMessages([]);
+        }
+        
         setCurrentSession(session);
-        setMessages(session.messages);
         showInfo('Session loaded', session.name);
+        
+        // Save to local storage for future access
+        await claudeSessionManager.saveSession(session);
+        await loadSessions(); // Refresh session list
+      } else {
+        console.log('No session found on server, checking local storage...');
+        // Fallback to local storage
+        const session = await claudeSessionManager.getSession(sessionId);
+        if (session) {
+          console.log('Found session in local storage:', session);
+          setCurrentSession(session);
+          setMessages(session.messages);
+          showInfo('Session loaded', session.name);
+        } else {
+          console.log('Session not found in local storage either');
+          showError('Session not found', `Session ${sessionId} does not exist`);
+        }
       }
     } catch (error) {
-      showError('Failed to load session', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Failed to load session from server, trying local:', error);
+      
+      // Fallback to local storage
+      try {
+        const session = await claudeSessionManager.getSession(sessionId);
+        if (session) {
+          setCurrentSession(session);
+          setMessages(session.messages);
+          showInfo('Session loaded', session.name);
+        }
+      } catch (localError) {
+        showError('Failed to load session', localError instanceof Error ? localError.message : 'Unknown error');
+      }
     }
   };
 
@@ -344,9 +439,20 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
 
   // New session management functions
   const handleForkSession = async (messageIndex?: number) => {
-    if (!currentSession) return;
+    if (!currentSession) {
+      showError('No session to fork', 'Please start a conversation first');
+      return;
+    }
+
+    // Check if session has messages (indicating it exists on server)
+    if (messages.length === 0) {
+      showError('Cannot fork empty session', 'Please send at least one message before forking');
+      return;
+    }
 
     try {
+      console.log('Forking session:', currentSession.id, 'at index:', messageIndex);
+      console.log('Current messages:', messages.length);
       const { data } = await forkSession({
         variables: {
           input: {
@@ -358,10 +464,26 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
         }
       });
 
+      console.log('Fork mutation response:', data);
+
       if (data?.forkSession) {
-        showSuccess('Session forked', `Created at message ${data.forkSession.forkMetadata.forkPoint}`);
+        const forkName = data.forkSession.session.metadata?.name || `Fork of ${currentSession.name}`;
+        const forkedSessionId = data.forkSession.session.id;
+        showSuccess('Session forked', `Created "${forkName}" at message ${data.forkSession.forkMetadata.forkPoint}`);
         await loadSessions();
-        loadSession(data.forkSession.session.id);
+        
+        // Small delay to ensure the session is fully initialized on the server
+        setTimeout(() => {
+          // Open the forked session in a new browser tab
+          const currentUrl = window.location.href;
+          const baseUrl = currentUrl.split('?')[0];
+          const newUrl = `${baseUrl}?sessionId=${forkedSessionId}`;
+          console.log('Opening forked session in new tab:', newUrl);
+          window.open(newUrl, '_blank');
+        }, 500);
+        
+        // Optionally also load it in the current tab
+        // loadSession(data.forkSession.session.id);
       }
     } catch (error) {
       showError('Failed to fork session', error instanceof Error ? error.message : 'Unknown error');

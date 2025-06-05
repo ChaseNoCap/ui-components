@@ -11,6 +11,7 @@ export const FORK_SESSION = gql`
         metadata {
           projectContext
           model
+          name
         }
       }
       parentSession {

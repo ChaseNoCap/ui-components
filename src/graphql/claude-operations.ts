@@ -134,4 +134,36 @@ export const AGENT_RUN_PROGRESS_SUBSCRIPTION = gql`
   }
 `;
 
+// Query to get session by ID
+export const GET_SESSION = gql`
+  query GetSession($id: ID!) {
+    session(id: $id) {
+      id
+      createdAt
+      lastActivity
+      status
+      pid
+      workingDirectory
+      metadata {
+        name
+        projectContext
+        model
+        tokenUsage {
+          inputTokens
+          outputTokens
+          estimatedCost
+        }
+        flags
+      }
+      history {
+        timestamp
+        prompt
+        response
+        executionTime
+        success
+      }
+    }
+  }
+`;
+
 // Note: Input types are defined in the schema and prefixed with service name in federation

@@ -164,6 +164,13 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
 const timingLink = new ApolloLink((operation, forward) => {
   const startTime = Date.now();
   
+  // Log all GraphQL operations
+  console.log(`[Apollo] Executing ${operation.operationName || 'unnamed'} operation:`, {
+    operationType: operation.query.definitions[0].operation,
+    variables: operation.variables,
+    query: operation.query.loc?.source.body.substring(0, 200)
+  });
+  
   return new Observable(observer => {
     const subscription = forward(operation).subscribe({
       next: (result) => {
@@ -174,6 +181,12 @@ const timingLink = new ApolloLink((operation, forward) => {
           result.extensions.timing = { duration };
         }
         
+        console.log(`[Apollo] Completed ${operation.operationName || 'unnamed'} in ${duration}ms:`, {
+          hasErrors: !!result.errors,
+          dataKeys: result.data ? Object.keys(result.data) : [],
+          errors: result.errors
+        });
+        
         // Log slow queries
         if (duration > 100) {
           console.warn(`Slow query detected: ${operation.operationName} took ${duration}ms`);
@@ -181,7 +194,10 @@ const timingLink = new ApolloLink((operation, forward) => {
         
         observer.next(result);
       },
-      error: observer.error.bind(observer),
+      error: (error) => {
+        console.error(`[Apollo] Error in ${operation.operationName || 'unnamed'}:`, error);
+        observer.error(error);
+      },
       complete: observer.complete.bind(observer),
     });
     
