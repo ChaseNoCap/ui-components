@@ -297,15 +297,18 @@ export const checkGraphQLHealth = async (): Promise<boolean> => {
     const result = await apolloClient.query({
       query: gql`
         query HealthCheck {
-          health {
+          claudeHealth {
             healthy
+          }
+          repoAgentHealth {
+            status
           }
         }
       `,
       fetchPolicy: 'network-only',
     });
     
-    return result.data?.health?.healthy || false;
+    return result.data?.claudeHealth?.healthy || false;
   } catch (error) {
     console.error('GraphQL health check failed:', error);
     return false;
