@@ -16,7 +16,6 @@ import { ToastProvider } from './components/Toast';
 import { GraphQLProvider } from './providers/GraphQLProvider';
 import Config from './pages/Config';
 import { GraphQLDebug } from './components/GraphQLDebug';
-import './utils/test-graphql'; // Load test utilities
 
 const queryClient = new QueryClient({
   defaultOptions: {
