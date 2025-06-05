@@ -3,15 +3,15 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import { getMainDefinition } from '@apollo/client/utilities';
 
-// HTTP link for queries and mutations
+// HTTP link for queries and mutations - Use federated gateway
 const httpLink = createHttpLink({
-  uri: import.meta.env.VITE_GRAPHQL_URL || 'http://localhost:3001/graphql',
+  uri: import.meta.env.VITE_GATEWAY_URL || 'http://localhost:3000/graphql',
 });
 
 // WebSocket link for subscriptions using graphql-ws
 const wsLink = new GraphQLWsLink(
   createClient({
-    url: import.meta.env.VITE_GRAPHQL_WS_URL || 'ws://localhost:3001/graphql',
+    url: import.meta.env.VITE_GATEWAY_WS_URL || 'ws://localhost:3000/graphql',
     connectionParams: {
       // Add any auth tokens here if needed
     },

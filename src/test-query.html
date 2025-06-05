@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test GraphQL Query</title>
+</head>
+<body>
+    <h1>Test GraphQL Query</h1>
+    <button onclick="testQuery()">Test Query</button>
+    <pre id="result"></pre>
+    
+    <script>
+        async function testQuery() {
+            const query = `
+                query {
+                    scanAllDetailed {
+                        __typename
+                        repositories {
+                            __typename
+                            path
+                            name
+                            branch
+                            isDirty
+                            uncommittedCount
+                            type
+                            status {
+                                __typename
+                                branch
+                                isDirty
+                                ahead
+                                behind
+                                hasRemote
+                                files {
+                                    __typename
+                                    path
+                                    status
+                                    isStaged
+                                }
+                                stashes {
+                                    __typename
+                                    index
+                                    message
+                                    timestamp
+                                }
+                            }
+                        }
+                        statistics {
+                            __typename
+                            totalRepositories
+                            dirtyRepositories
+                        }
+                        metadata {
+                            __typename
+                            startTime
+                            endTime
+                            duration
+                            workspaceRoot
+                        }
+                    }
+                }
+            `;
+            
+            try {
+                const response = await fetch('http://localhost:3000/graphql', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

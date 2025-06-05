@@ -50,16 +50,16 @@ class GitServiceGraphQL {
 
       const status = data.gitStatus;
       return {
-        path: status.path,
+        path: repoPath, // Use the input path since it's not in the response
         branch: status.branch,
         ahead: status.ahead || 0,
         behind: status.behind || 0,
         files: status.files.map((f: any) => ({
           file: f.path,
           status: f.status,
-          staged: f.staged
+          staged: f.isStaged
         })),
-        hasUncommittedChanges: !status.isClean
+        hasUncommittedChanges: status.isDirty
       };
     } catch (error) {
       logger.error('Failed to get repository status', { error, repoPath });

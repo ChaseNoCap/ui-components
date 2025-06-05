@@ -1,5 +1,6 @@
 import { gql, DocumentNode } from '@apollo/client';
-import { client } from './apolloClient';
+import { apolloClient as client } from '../lib/apollo-client';
+import { SCAN_ALL_DETAILED } from '../graphql/git-operations';
 import type { 
   ChangeReviewReport, 
   RepositoryChangeData, 
@@ -7,72 +8,6 @@ import type {
 } from './changeReviewService';
 
 // Queries and Mutations
-const SCAN_ALL_DETAILED = gql`
-  query ScanAllDetailed {
-    scanAllDetailed {
-      timestamp
-      totalRepositories
-      dirtyRepositories
-      repositories {
-        repository {
-          name
-          path
-          status {
-            branch
-            trackingBranch
-            files {
-              path
-              status
-              statusDescription
-              isStaged
-              additions
-              deletions
-            }
-            isDirty
-            changeCount
-          }
-          isSubmodule
-          packageInfo {
-            name
-            version
-            description
-            private
-          }
-        }
-        stagedDiff
-        unstagedDiff
-        recentCommits {
-          hash
-          abbrevHash
-          message
-          author
-          authorEmail
-          timestamp
-          filesChanged
-        }
-        stashes {
-          index
-          message
-          timestamp
-        }
-      }
-      statistics {
-        totalFiles
-        totalAdditions
-        totalDeletions
-        affectedPackages
-        changesByType {
-          modified
-          added
-          deleted
-          renamed
-          untracked
-        }
-      }
-    }
-  }
-`;
-
 const GENERATE_EXECUTIVE_SUMMARY = gql`
   mutation GenerateExecutiveSummary($input: ExecutiveSummaryInput!) {
     generateExecutiveSummary(input: $input) {
@@ -164,6 +99,15 @@ function buildParallelCommitMessageMutation(repositories: RepositoryChangeData[]
 }
 
 export class GraphQLParallelChangeReviewService {
+  private isReviewInProgress = false;
+
+  /**
+   * Reset the review in progress flag (for error recovery)
+   */
+  public resetReviewState() {
+    this.isReviewInProgress = false;
+  }
+
   /**
    * Scan all repositories using GraphQL
    */
@@ -176,26 +120,29 @@ export class GraphQLParallelChangeReviewService {
         message: 'Scanning all repositories for changes...'
       });
 
-      const { data } = await client.query({
+      const result = await client.query({
         query: SCAN_ALL_DETAILED,
         fetchPolicy: 'network-only'
       });
 
-      const scanReport = data.scanAllDetailed;
+      if (!result.data) {
+        console.error('GraphQL query returned no data:', result);
+        throw new Error('Failed to fetch repository data');
+      }
+
+      const scanReport = result.data.scanAllDetailed;
       
       onProgress?.({
         stage: 'scanning',
-        message: `Found ${scanReport.totalRepositories} repositories`,
-        current: scanReport.totalRepositories,
-        total: scanReport.totalRepositories
+        message: `Found ${scanReport.statistics.totalRepositories} repositories`,
+        current: scanReport.statistics.totalRepositories,
+        total: scanReport.statistics.totalRepositories
       });
 
       // Transform GraphQL response to match existing interface
       return scanReport.repositories.map((repo: any) => {
-        const { repository, stagedDiff, unstagedDiff, recentCommits } = repo;
-        
         // Transform file changes
-        const changes = repository.status.files.map((file: any) => ({
+        const changes = repo.status.files.map((file: any) => ({
           file: file.path,
           status: file.status,
           staged: file.isStaged,
@@ -223,23 +170,18 @@ export class GraphQLParallelChangeReviewService {
         };
 
         return {
-          name: repository.name,
-          path: repository.path,
+          name: repo.name,
+          path: repo.path,
           branch: {
-            current: repository.status.branch,
-            tracking: repository.status.trackingBranch || ''
+            current: repo.branch,
+            tracking: ''
           },
           changes: regularChanges,
-          hasChanges: repository.status.isDirty,
-          recentCommits: recentCommits.map((commit: any) => ({
-            hash: commit.hash,
-            message: commit.message,
-            author: commit.author,
-            date: commit.timestamp
-          })),
+          hasChanges: repo.isDirty,
+          recentCommits: [],
           gitDiff: {
-            staged: stagedDiff || '',
-            unstaged: unstagedDiff || ''
+            staged: '',
+            unstaged: ''
           },
           newFileContents: {},
           statistics,
@@ -406,6 +348,27 @@ export class GraphQLParallelChangeReviewService {
   async performComprehensiveReview(
     onProgress?: (progress: ScanProgress) => void
   ): Promise<ChangeReviewReport> {
+    // Prevent concurrent reviews
+    if (this.isReviewInProgress) {
+      console.log('Review already in progress, skipping duplicate call');
+      // Return empty report instead of throwing to handle React StrictMode better
+      return {
+        executiveSummary: '',
+        generatedAt: new Date(),
+        repositories: [],
+        statistics: {
+          totalFiles: 0,
+          totalAdditions: 0,
+          totalDeletions: 0,
+          totalModifications: 0,
+          affectedPackages: []
+        },
+        scanTime: new Date().toISOString()
+      };
+    }
+    
+    this.isReviewInProgress = true;
+    
     try {
       // 1. Scan all repositories
       const repositories = await this.scanAllRepositories(onProgress);
@@ -430,6 +393,8 @@ export class GraphQLParallelChangeReviewService {
     } catch (error) {
       console.error('Error performing comprehensive review:', error);
       throw error;
+    } finally {
+      this.isReviewInProgress = false;
     }
   }
 
@@ -580,7 +545,104 @@ export class GraphQLParallelChangeReviewService {
       error: 'Push functionality not yet implemented in GraphQL'
     };
   }
+
+  /**
+   * Batch commit changes using GraphQL
+   */
+  async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<any> {
+    try {
+      const input = {
+        commits: commits.map(commit => ({
+          repository: commit.repoPath,
+          message: commit.message,
+          files: [], // Empty means commit all
+          stageAll: true
+        })),
+        continueOnError: true
+      };
+
+      const { data } = await client.mutate({
+        mutation: BATCH_COMMIT,
+        variables: { input }
+      });
+
+      return data.batchCommit;
+    } catch (error) {
+      console.error('Error batch committing:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Batch push changes (not implemented yet)
+   */
+  async batchPush(repoPaths: string[]): Promise<any> {
+    // TODO: Implement batch push functionality when available in GraphQL
+    return {
+      results: repoPaths.map(path => ({
+        repository: path.split('/').pop() || path,
+        success: false,
+        error: 'Push functionality not yet implemented in GraphQL'
+      }))
+    };
+  }
 }
 
 // Export singleton instance
-export const graphqlParallelChangeReviewService = new GraphQLParallelChangeReviewService();
+const service = new GraphQLParallelChangeReviewService();
+
+export const graphqlParallelChangeReviewService = {
+  async scanAllRepositories(
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<RepositoryChangeData[]> {
+    return service.scanAllRepositories(onProgress);
+  },
+
+  async generateCommitMessages(
+    repositories: RepositoryChangeData[],
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<RepositoryChangeData[]> {
+    return service.generateCommitMessages(repositories, onProgress);
+  },
+
+  async generateExecutiveSummary(
+    repositories: RepositoryChangeData[],
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<string> {
+    return service.generateExecutiveSummary(repositories, onProgress);
+  },
+
+  async performComprehensiveReview(
+    onProgress?: (progress: ScanProgress) => void
+  ): Promise<ChangeReviewReport> {
+    return service.performComprehensiveReview(onProgress);
+  },
+
+  async commitRepository(
+    repositoryPath: string,
+    commitMessage: string,
+    files?: string[]
+  ): Promise<{ success: boolean; commitHash?: string; error?: string }> {
+    return service.commitRepository(repositoryPath, commitMessage, files);
+  },
+
+  async pushRepository(
+    repositoryPath: string
+  ): Promise<{ success: boolean; branch?: string; error?: string }> {
+    return service.pushRepository(repositoryPath);
+  },
+
+  resetReviewState() {
+    service.resetReviewState();
+  },
+
+  async batchCommit(
+    commits: Array<{ repoPath: string; message: string }>
+  ): Promise<any> {
+    return service.batchCommit(commits);
+  },
+
+  async batchPush(repoPaths: string[]): Promise<any> {
+    return service.batchPush(repoPaths);
+  }
+};

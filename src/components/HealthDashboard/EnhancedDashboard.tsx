@@ -19,16 +19,14 @@ import { useToastContext } from '../Toast';
 
 // GitHub queries
 const GITHUB_FULL_DATA_QUERY = gql`
-  query GitHubFullData($perPage: Int = 20) {
+  query GitHubFullData($first: Int = 20) {
     githubUser {
       login
       name
       avatarUrl
-      bio
-      company
-      publicRepos
+      email
     }
-    githubRepositories(perPage: $perPage) {
+    githubRepositories(first: $first) {
       id
       name
       fullName
@@ -37,10 +35,10 @@ const GITHUB_FULL_DATA_QUERY = gql`
       language
       updatedAt
       pushedAt
-      topics
       private
       defaultBranch
-      openIssuesCount
+      forksCount
+      watchersCount
       owner {
         login
         avatarUrl
@@ -49,28 +47,8 @@ const GITHUB_FULL_DATA_QUERY = gql`
   }
 `;
 
-const GITHUB_WORKFLOWS_QUERY = gql`
-  query GitHubWorkflows($owner: String!, $repo: String!) {
-    githubWorkflows(owner: $owner, repo: $repo) {
-      id
-      name
-      path
-      state
-    }
-    githubWorkflowRuns(owner: $owner, repo: $repo, perPage: 5) {
-      id
-      name
-      headBranch
-      headSha
-      status
-      conclusion
-      workflowId
-      url
-      createdAt
-      updatedAt
-    }
-  }
-`;
+// Workflow queries not available in GitHub Mesh service
+// TODO: Implement workflow support in federation
 
 interface ServiceHealth {
   name: string;
@@ -102,7 +80,8 @@ interface Repository {
   pushedAt?: string;
   private: boolean;
   defaultBranch: string;
-  openIssuesCount: number;
+  forksCount: number;
+  watchersCount: number;
   owner: {
     login: string;
     avatarUrl?: string;
@@ -123,24 +102,16 @@ export const EnhancedDashboard: React.FC = () => {
   const { data: githubData, loading: githubLoading, error: githubError, refetch: refetchGithub } = useQuery(
     GITHUB_FULL_DATA_QUERY,
     { 
-      variables: { perPage: 20 },
+      variables: { first: 20 },
       errorPolicy: 'ignore',
       pollInterval: 30000 // Refresh every 30 seconds
     }
   );
   
-  // Workflow data for selected repo
-  const { data: workflowData, loading: workflowLoading, refetch: refetchWorkflows } = useQuery(
-    GITHUB_WORKFLOWS_QUERY,
-    {
-      variables: { 
-        owner: githubData?.githubUser?.login || 'ChaseNoCap',
-        repo: selectedRepo 
-      },
-      skip: !selectedRepo || !githubData?.githubUser?.login,
-      errorPolicy: 'ignore'
-    }
-  );
+  // Workflow data - not available in current GitHub Mesh service
+  const workflowData = null;
+  const workflowLoading = false;
+  const refetchWorkflows = () => Promise.resolve();
   
   // Update last check time
   useEffect(() => {
@@ -245,13 +216,13 @@ export const EnhancedDashboard: React.FC = () => {
 
   const repositories = (githubData?.githubRepositories || []) as Repository[];
   const githubUser = githubData?.githubUser;
-  const workflows = workflowData?.githubWorkflows || [];
-  const workflowRuns = (workflowData?.githubWorkflowRuns || []) as WorkflowRun[];
+  const workflows = [];
+  const workflowRuns = [] as WorkflowRun[];
   
   // Calculate metrics
   const totalPackages = repositories.filter(r => r.name.includes('gothic') || isMetaGOTHICPackage(r.name)).length;
   const totalRepos = repositories.length;
-  const totalIssues = repositories.reduce((sum, r) => sum + r.openIssuesCount, 0);
+  const totalStars = repositories.reduce((sum, r) => sum + r.stargazersCount, 0);
   
   // Get all recent workflow runs from all repos
   const allWorkflowRuns = workflowRuns.map(run => ({
@@ -342,13 +313,13 @@ export const EnhancedDashboard: React.FC = () => {
                 <div className="flex-1">
                   <h2 className="text-xl font-semibold">{githubUser.name || githubUser.login}</h2>
                   <p className="text-gray-600 dark:text-gray-400">@{githubUser.login}</p>
-                  {githubUser.bio && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{githubUser.bio}</p>
+                  {githubUser.email && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{githubUser.email}</p>
                   )}
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold">{githubUser.publicRepos}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Public Repos</div>
+                  <div className="text-2xl font-bold">{totalRepos}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Repositories</div>
                 </div>
               </div>
             </CardContent>
@@ -414,11 +385,11 @@ export const EnhancedDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Open Issues
+                    Total Stars
                   </p>
-                  <p className="text-2xl font-bold mt-2">{totalIssues}</p>
+                  <p className="text-2xl font-bold mt-2">{totalStars}</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-yellow-500" />
+                <Activity className="h-8 w-8 text-yellow-500" />
               </div>
             </CardContent>
           </Card>
@@ -481,37 +452,12 @@ export const EnhancedDashboard: React.FC = () => {
             </select>
           </div>
 
-          {/* Quick Actions */}
+          {/* Quick Actions - Disabled until workflow support is added */}
           {selectedRepo && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button
-                onClick={() => handleTriggerWorkflow('test.yml')}
-                disabled={isTriggering}
-                className="flex items-center justify-center space-x-2"
-              >
-                <Play className="h-5 w-5" />
-                <span>Run Tests</span>
-              </Button>
-
-              <Button
-                onClick={() => handleTriggerWorkflow('build.yml')}
-                disabled={isTriggering}
-                variant="secondary"
-                className="flex items-center justify-center space-x-2"
-              >
-                <Send className="h-5 w-5" />
-                <span>Deploy</span>
-              </Button>
-
-              <Button
-                onClick={() => handleTriggerWorkflow('publish.yml')}
-                disabled={isTriggering}
-                variant="outline"
-                className="flex items-center justify-center space-x-2"
-              >
-                <Tag className="h-5 w-5" />
-                <span>Publish Package</span>
-              </Button>
+            <div className="text-center p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
+              <p className="text-gray-600 dark:text-gray-400">
+                Workflow controls not available in current federation setup
+              </p>
             </div>
           )}
         </div>
@@ -572,9 +518,9 @@ export const EnhancedDashboard: React.FC = () => {
                             </span>
                           )}
                           <span>⭐ {repo.stargazersCount}</span>
-                          {repo.openIssuesCount > 0 && (
-                            <span className="text-yellow-600">
-                              {repo.openIssuesCount} issues
+                          {repo.forksCount > 0 && (
+                            <span className="text-blue-600">
+                              🍴 {repo.forksCount}
                             </span>
                           )}
                         </div>

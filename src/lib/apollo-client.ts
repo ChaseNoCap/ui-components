@@ -12,14 +12,15 @@ import { onError } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
 import { YogaSSELink } from './sse-link';
 
-// Environment configuration
-const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT || import.meta.env.VITE_GRAPHQL_URL || 'http://localhost:3000/graphql';
-const WS_ENDPOINT = import.meta.env.VITE_WS_ENDPOINT || import.meta.env.VITE_GRAPHQL_WS_URL || 'ws://localhost:3000/graphql';
+// Environment configuration - Use federated gateway endpoint
+const GRAPHQL_ENDPOINT = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:3000/graphql';
+const WS_ENDPOINT = import.meta.env.VITE_GATEWAY_WS_URL || 'ws://localhost:3000/graphql';
 
 // Create HTTP link for queries and mutations
 const httpLink = createHttpLink({
   uri: GRAPHQL_ENDPOINT,
-  credentials: 'include', // Include cookies for auth
+  // Remove credentials mode to avoid CORS issues with federation gateway
+  // Authentication is handled at the gateway level
 });
 
 // Create SSE link for subscriptions with GraphQL Yoga
@@ -150,7 +151,11 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
       // Emit offline event
       window.dispatchEvent(new CustomEvent('graphql:offline'));
     } else {
-      console.error(`[Network error]: ${networkError}`);
+      console.error(`[Network error]: ${networkError}`, {
+        operation: operation.operationName,
+        variables: operation.variables,
+        query: operation.query.loc?.source.body.substring(0, 200)
+      });
     }
   }
 });
@@ -220,7 +225,7 @@ const cache = new InMemoryCache({
       }
     },
     Repository: {
-      keyFields: ['owner', 'name'],
+      keyFields: ['path'], // Use path as unique identifier for local repositories
     },
     ClaudeSession: {
       keyFields: ['id'],
@@ -237,7 +242,7 @@ const cache = new InMemoryCache({
       }
     },
     GitStatus: {
-      keyFields: ['path'],
+      keyFields: false, // GitStatus is not an entity, it's embedded in Repository
     },
     SystemHealth: {
       keyFields: [], // Singleton
@@ -281,7 +286,7 @@ export const refetchAllQueries = async () => {
   });
 };
 
-// Health check function
+// Health check function - uses federated health queries
 export const checkGraphQLHealth = async (): Promise<boolean> => {
   try {
     const result = await apolloClient.query({
@@ -289,6 +294,7 @@ export const checkGraphQLHealth = async (): Promise<boolean> => {
         query HealthCheck {
           claudeHealth {
             healthy
+            claudeAvailable
           }
           repoAgentHealth {
             status
@@ -298,7 +304,10 @@ export const checkGraphQLHealth = async (): Promise<boolean> => {
       fetchPolicy: 'network-only',
     });
     
-    return result.data?.claudeHealth?.healthy || false;
+    const claudeHealthy = result.data?.claudeHealth?.healthy || false;
+    const repoHealthy = result.data?.repoAgentHealth?.status === 'healthy' || false;
+    
+    return claudeHealthy && repoHealthy;
   } catch (error) {
     console.error('GraphQL health check failed:', error);
     return false;

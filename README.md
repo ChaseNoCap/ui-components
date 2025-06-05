@@ -7,41 +7,48 @@ Production-ready React dashboard for the metaGOTHIC framework with **fully opera
 
 ## 🚀 Quick Start
 
-### **Essential: Start Both Servers**
+### **Essential: Start the Federation Gateway**
 
-The dashboard requires **two servers** to be running for full functionality:
+The dashboard uses GraphQL Federation v2 and requires the gateway to be running:
 
 ```bash
-# Terminal 1: Start the Git & Claude API server
-npm run git-server
+# Terminal 1: Start the federation gateway and all services
+cd ../../ # Go to meta-gothic-framework root
+npm run start:federation
 
 # Terminal 2: Start the React dashboard  
+cd packages/ui-components
 npm run dev
 ```
 
 **Dashboard URL**: http://localhost:3001
 
-> ⚠️ **Important**: Both servers must be running for:
-> - Real-time git status detection
-> - AI-powered commit message generation via Claude Code
-> - Repository management tools
+> ⚠️ **Important**: The federation gateway provides:
+> - Unified GraphQL endpoint for all services
+> - Real-time git operations through Repo Agent Service
+> - AI-powered features through Claude Service
+> - GitHub data through GitHub Mesh Service
 
 ### Environment Setup
 Create `.env.local`:
 ```env
 VITE_GITHUB_TOKEN=your_github_token_here
+VITE_GATEWAY_URL=http://localhost:3000/graphql
+VITE_GATEWAY_WS_URL=ws://localhost:3000/graphql
 ```
 
 ## 🚀 Production Features
 
-### Live GitHub API Integration ✅
-- **100% live data integration** - no mock fallbacks in production
-- **Real workflow runs** displaying actual repository data
-- **GitHub token configured and working** with full authentication
-- **Browser-compatible implementation** with resolved Node.js compatibility issues
-- **Production-ready GitHub service** with comprehensive error handling
-- **Token validation** with visual status indicators
-- **Rate limiting awareness** and proper caching
+### GraphQL Federation v2 Integration ✅
+- **Unified GraphQL gateway** - single endpoint for all operations
+- **100% GraphQL operations** - no REST API calls
+- **Federated services** providing specialized functionality:
+  - Claude Service for AI operations
+  - Repo Agent Service for git operations
+  - GitHub Mesh Service for GitHub data
+- **Real-time subscriptions** through WebSocket support
+- **Type-safe operations** with generated TypeScript types
+- **Automatic service discovery** and schema composition
 
 ### Comprehensive Error Handling
 - **ApiError component** for user-friendly error display

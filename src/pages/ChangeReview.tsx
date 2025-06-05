@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { 
-  changeReviewService, 
   ChangeReviewReport, 
   ScanProgress,
   RepositoryChangeData 
@@ -34,8 +33,7 @@ import { toast } from '../lib/toast';
 import { Label } from '../components/ui/label';
 import { settingsService } from '../services/settingsService';
 
-// Feature flag for GraphQL - default to true
-const USE_GRAPHQL = import.meta.env.VITE_USE_GRAPHQL !== 'false';
+// Always use GraphQL with federation
 
 export const ChangeReviewPage: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -48,9 +46,7 @@ export const ChangeReviewPage: React.FC = () => {
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
   const [showSubmoduleChanges, setShowSubmoduleChanges] = useState<Map<string, boolean>>(new Map());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [apiMode, setApiMode] = useState<'rest' | 'graphql' | 'graphql-parallel'>(
-    USE_GRAPHQL ? 'graphql' : 'rest'
-  );
+  const [apiMode, setApiMode] = useState<'graphql' | 'graphql-parallel'>('graphql-parallel');
   const [logEntries, setLogEntries] = useState<Array<{
     timestamp: Date;
     message: string;
@@ -62,11 +58,10 @@ export const ChangeReviewPage: React.FC = () => {
   const [autoCloseEnabled, setAutoCloseEnabled] = useState(modalSettings.autoClose);
   const [autoCloseDelay] = useState(modalSettings.autoCloseDelay);
 
-  // Select the appropriate service
+  // Select the appropriate GraphQL service
   const reviewService = 
     apiMode === 'graphql-parallel' ? graphqlParallelChangeReviewService :
-    apiMode === 'graphql' ? graphqlChangeReviewService : 
-    changeReviewService;
+    graphqlChangeReviewService;
 
   // Create a ref to store the startReview function
   const startReviewRef = React.useRef<() => Promise<void>>();
@@ -99,10 +94,9 @@ export const ChangeReviewPage: React.FC = () => {
     setLogEntries([]); // Clear previous logs
 
     try {
-      const isGraphQL = apiMode === 'graphql' || apiMode === 'graphql-parallel';
       const reviewReport = await reviewService.performComprehensiveReview(
         (progress) => setScanProgress(progress),
-        isGraphQL ? (entry) => setLogEntries(prev => [...prev, entry]) : undefined
+        (entry) => setLogEntries(prev => [...prev, entry])
       );
       
       // Set report first
@@ -114,20 +108,14 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
-      // For REST mode, close modal after a delay
-      // For GraphQL modes, let the modal handle its own closing based on auto-close settings
-      if (apiMode === 'rest') {
-        setTimeout(() => {
-          setIsScanning(false);
-          setScanProgress(null);
-          toast.success('Change review completed successfully!');
-        }, 500);
-      } else {
-        // For GraphQL modes, just show success toast
-        // The modal will handle closing based on auto-close settings
-        const modeText = apiMode === 'graphql-parallel' ? ' using parallel GraphQL!' : ' using GraphQL!';
-        toast.success(`Change review completed successfully${modeText}`);
-      }
+      // Show success toast for GraphQL modes
+      // The modal will handle closing based on auto-close settings
+      const modeText = apiMode === 'graphql-parallel' ? ' using parallel GraphQL!' : ' using GraphQL!';
+      toast.success(`Change review completed successfully${modeText}`);
+      
+      // Clear scanning state on success
+      setIsScanning(false);
+      setScanProgress(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
@@ -136,11 +124,9 @@ export const ChangeReviewPage: React.FC = () => {
       setScanProgress(null);
       setIsRefreshing(false);
       // Reset the review state in case of error to allow retry
-      if (apiMode === 'graphql' || apiMode === 'graphql-parallel') {
-        graphqlChangeReviewService.resetReviewState();
-        if (apiMode === 'graphql-parallel') {
-          graphqlParallelChangeReviewService.resetReviewState();
-        }
+      graphqlChangeReviewService.resetReviewState();
+      if (apiMode === 'graphql-parallel') {
+        graphqlParallelChangeReviewService.resetReviewState();
       }
     }
   }, [reviewService, apiMode]);
@@ -377,38 +363,28 @@ export const ChangeReviewPage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            {/* API Mode Selector */}
+            {/* GraphQL Mode Selector */}
             <div className="flex items-center gap-2">
-              <Label className="text-sm">API Mode:</Label>
+              <Label className="text-sm">GraphQL Mode:</Label>
               <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant={apiMode === 'rest' ? 'default' : 'outline'}
-                  onClick={() => {
-                    setApiMode('rest');
-                    toast.info('Switched to REST API');
-                  }}
-                >
-                  REST
-                </Button>
                 <Button
                   size="sm"
                   variant={apiMode === 'graphql' ? 'default' : 'outline'}
                   onClick={() => {
                     setApiMode('graphql');
-                    toast.info('Switched to GraphQL API');
+                    toast.info('Switched to Sequential GraphQL');
                   }}
                   className="flex items-center gap-1"
                 >
                   <Layers className="h-3 w-3" />
-                  GraphQL
+                  Sequential
                 </Button>
                 <Button
                   size="sm"
                   variant={apiMode === 'graphql-parallel' ? 'default' : 'outline'}
                   onClick={() => {
                     setApiMode('graphql-parallel');
-                    toast.info('Switched to Parallel GraphQL API');
+                    toast.info('Switched to Parallel GraphQL');
                   }}
                   className="flex items-center gap-1"
                 >
@@ -469,7 +445,7 @@ export const ChangeReviewPage: React.FC = () => {
         <LoadingModal
           isOpen={true}
           title="Performing Change Review"
-          useProgressLog={apiMode === 'graphql' || apiMode === 'graphql-parallel'}
+          useProgressLog={true}
           logEntries={logEntries}
           autoClose={autoCloseEnabled}
           autoCloseDelay={autoCloseDelay}

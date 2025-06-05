@@ -42,20 +42,14 @@ export const SYSTEM_HEALTH_QUERY = gql`
   query SystemHealth {
     claudeHealth {
       healthy
-      version
       claudeAvailable
+      version
       claudeVersion
       activeSessions
-      resources {
-        memoryUsage
-        cpuUsage
-        activeProcesses
-      }
     }
     repoAgentHealth {
       status
       version
-      timestamp
     }
   }
 `;
@@ -204,7 +198,7 @@ export const RUN_STATISTICS_QUERY = gql`
 // ============================================
 
 export const EXECUTE_COMMAND_MUTATION = gql`
-  mutation ExecuteCommand($input: Claude_ExecuteInput!) {
+  mutation ExecuteCommand($input: ClaudeExecuteInput!) {
     executeCommand(input: $input) {
       sessionId
       success
@@ -220,7 +214,7 @@ export const KILL_SESSION_MUTATION = gql`
 `;
 
 export const COMMIT_CHANGES_MUTATION = gql`
-  mutation CommitChanges($input: Repo_CommitInput!) {
+  mutation CommitChanges($input: CommitInput!) {
     commitChanges(input: $input) {
       success
       hash
@@ -234,7 +228,7 @@ export const COMMIT_CHANGES_MUTATION = gql`
 `;
 
 export const BATCH_COMMIT_MUTATION = gql`
-  mutation BatchCommit($input: Repo_BatchCommitInput!) {
+  mutation BatchCommit($input: BatchCommitInput!) {
     batchCommit(input: $input) {
       totalRepositories
       successCount
@@ -252,7 +246,7 @@ export const BATCH_COMMIT_MUTATION = gql`
 `;
 
 export const GENERATE_COMMIT_MESSAGES_MUTATION = gql`
-  mutation GenerateCommitMessages($input: Claude_BatchCommitMessageInput!) {
+  mutation GenerateCommitMessages($input: BatchCommitMessageInput!) {
     generateCommitMessages(input: $input) {
       totalRepositories
       successCount
@@ -294,7 +288,7 @@ export const RETRY_FAILED_RUNS_MUTATION = gql`
 `;
 
 export const EXECUTE_GIT_COMMAND_MUTATION = gql`
-  mutation ExecuteGitCommand($input: Repo_GitCommandInput!) {
+  mutation ExecuteGitCommand($input: GitCommandInput!) {
     executeGitCommand(input: $input) {
       success
       output

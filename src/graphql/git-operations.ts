@@ -4,16 +4,24 @@ import { gql } from '@apollo/client';
 export const GET_REPOSITORY_STATUS = gql`
   query GetRepositoryStatus($path: String!) {
     gitStatus(path: $path) {
-      path
-      isClean
+      __typename
       branch
+      isDirty
       files {
+        __typename
         path
         status
-        staged
+        isStaged
       }
       ahead
       behind
+      hasRemote
+      stashes {
+        __typename
+        index
+        message
+        timestamp
+      }
     }
   }
 `;
@@ -22,14 +30,13 @@ export const GET_REPOSITORY_STATUS = gql`
 export const SCAN_ALL_REPOSITORIES = gql`
   query ScanAllRepositories {
     scanAllRepositories {
+      __typename
       path
       name
-      status {
-        isClean
-        branch
-        uncommittedCount
-        modifiedFiles
-      }
+      branch
+      isDirty
+      uncommittedCount
+      type
     }
   }
 `;
@@ -38,32 +45,58 @@ export const SCAN_ALL_REPOSITORIES = gql`
 export const SCAN_ALL_DETAILED = gql`
   query ScanAllDetailed {
     scanAllDetailed {
-      path
-      name
-      status {
-        isClean
-        branch
-        uncommittedCount
-        modifiedFiles
-        ahead
-        behind
-        files {
-          path
-          status
-          staged
-        }
-      }
-      lastCommit {
-        sha
-        message
-        author
-        timestamp
-      }
-      submodules {
+      __typename
+      repositories {
+        __typename
         path
         name
         branch
+        isDirty
         uncommittedCount
+        type
+        status {
+          __typename
+          branch
+          isDirty
+          ahead
+          behind
+          hasRemote
+          files {
+            __typename
+            path
+            status
+            isStaged
+          }
+          stashes {
+            __typename
+            index
+            message
+            timestamp
+          }
+        }
+      }
+      statistics {
+        __typename
+        totalRepositories
+        dirtyRepositories
+        totalUncommittedFiles
+        totalAdditions
+        totalDeletions
+        changesByType {
+          __typename
+          modified
+          added
+          deleted
+          renamed
+          untracked
+        }
+      }
+      metadata {
+        __typename
+        startTime
+        endTime
+        duration
+        workspaceRoot
       }
     }
   }
