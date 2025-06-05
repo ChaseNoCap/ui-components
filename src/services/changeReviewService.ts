@@ -47,7 +47,6 @@ export interface RepositoryChangeData {
 }
 
 export interface ChangeReviewReport {
-  executiveSummary: string;
   generatedAt: Date;
   repositories: RepositoryChangeData[];
   statistics: {
@@ -265,64 +264,12 @@ export class ChangeReviewService {
     }
   }
 
-  /**
-   * Generate executive summary from all commit messages
-   */
-  async generateExecutiveSummary(
-    repositories: RepositoryChangeData[],
-    onProgress?: (progress: ScanProgress) => void
-  ): Promise<string> {
-    onProgress?.({
-      stage: 'summarizing',
-      message: 'Creating executive summary...'
-    });
-
-    const reposWithMessages = repositories.filter(
-      r => r.hasChanges && r.generatedCommitMessage
-    );
-
-    if (reposWithMessages.length === 0) {
-      return 'No changes detected across any repositories.';
-    }
-
-    try {
-      const response = await fetch(`${this.apiUrl}/api/claude/executive-summary`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          commitMessages: reposWithMessages.map(repo => ({
-            repo: repo.name,
-            message: repo.generatedCommitMessage
-          }))
-        })
-      }).catch((err) => {
-        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-          throw new Error(`Cannot connect to git server at ${this.apiUrl}. Please ensure the git server is running. From the ui-components directory, run: npm run git-server`);
-        }
-        throw err;
-      });
-
-      if (!response.ok) {
-        console.warn('Failed to generate AI executive summary, using fallback');
-        return this.generateFallbackExecutiveSummary(repositories);
-      }
-
-      const { summary } = await response.json();
-      return summary;
-    } catch (error) {
-      console.error('Error generating executive summary:', error);
-      return this.generateFallbackExecutiveSummary(repositories);
-    }
-  }
 
   /**
    * Generate a complete change review report
    */
   async generateChangeReport(
-    repositories: RepositoryChangeData[],
-    executiveSummary: string
+    repositories: RepositoryChangeData[]
   ): Promise<ChangeReviewReport> {
     // Calculate overall statistics
     const statistics = {
@@ -357,7 +304,6 @@ export class ChangeReviewService {
     });
 
     return {
-      executiveSummary,
       generatedAt: new Date(),
       repositories,
       statistics,
@@ -378,11 +324,8 @@ export class ChangeReviewService {
       // 2. Generate commit messages for repos with changes
       const reposWithMessages = await this.generateCommitMessages(repositories, onProgress);
       
-      // 3. Generate executive summary
-      const executiveSummary = await this.generateExecutiveSummary(reposWithMessages, onProgress);
-      
-      // 4. Compile final report
-      const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
+      // 3. Compile final report
+      const report = await this.generateChangeReport(reposWithMessages);
       
       onProgress?.({
         stage: 'complete',
@@ -422,31 +365,6 @@ export class ChangeReviewService {
     });
   }
 
-  /**
-   * Fallback executive summary generation
-   */
-  private generateFallbackExecutiveSummary(
-    repositories: RepositoryChangeData[]
-  ): string {
-    const changedRepos = repositories.filter(r => r.hasChanges);
-    
-    if (changedRepos.length === 0) {
-      return 'No changes detected across any repositories.';
-    }
-
-    const totalChanges = changedRepos.reduce(
-      (sum, repo) => sum + (repo.statistics?.totalFiles || 0),
-      0
-    );
-
-    const summary = [
-      `• ${changedRepos.length} repositories have uncommitted changes`,
-      `• Total of ${totalChanges} files affected across the codebase`,
-      `• Primary packages affected: ${changedRepos.map(r => r.name).join(', ')}`
-    ];
-
-    return summary.join('\n');
-  }
 
   /**
    * Get list of all submodules

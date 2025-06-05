@@ -46,9 +46,6 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
       '# Change Review Report',
       `Generated: ${new Date(report.generatedAt).toLocaleString()}`,
       '',
-      '## Executive Summary',
-      report.executiveSummary,
-      '',
       '## Statistics',
       `- Total Files: ${report.statistics?.totalFiles || 0}`,
       `- Additions: ${report.statistics?.totalAdditions || 0}`,
@@ -114,37 +111,24 @@ export const ChangeReviewReport: React.FC<ChangeReviewReportProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Summary Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              <CardTitle>Executive Summary</CardTitle>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={copyToClipboard}>
-                <Copy className="h-4 w-4 mr-1" />
-                Copy
-              </Button>
-              {onExport && (
-                <Button variant="outline" size="sm" onClick={onExport}>
-                  <Download className="h-4 w-4 mr-1" />
-                  Export
-                </Button>
-              )}
-            </div>
-          </div>
-          <CardDescription>
-            Generated at {new Date(report.generatedAt).toLocaleString()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="prose prose-sm max-w-none">
-            <pre className="whitespace-pre-wrap font-sans">{report.executiveSummary}</pre>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Action Buttons */}
+      <div className="flex justify-between items-center mb-4">
+        <div className="text-sm text-gray-600">
+          Generated at {new Date(report.generatedAt).toLocaleString()}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={copyToClipboard}>
+            <Copy className="h-4 w-4 mr-1" />
+            Copy Report
+          </Button>
+          {onExport && (
+            <Button variant="outline" size="sm" onClick={onExport}>
+              <Download className="h-4 w-4 mr-1" />
+              Export
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* Statistics Overview */}
       <Card>

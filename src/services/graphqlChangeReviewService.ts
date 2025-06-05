@@ -713,7 +713,6 @@ export class GraphQLChangeReviewService {
       this.log('Review already in progress, skipping duplicate call', 'info');
       // Return empty report instead of throwing to handle React StrictMode better
       return {
-        executiveSummary: 'Skipped - review already in progress',
         generatedAt: new Date(),
         repositories: [],
         statistics: {
@@ -755,12 +754,8 @@ export class GraphQLChangeReviewService {
       // 3. Generate commit messages using parallel GraphQL
       const reposWithMessages = await this.generateCommitMessages(repositories, onProgress);
       
-      // 4. Generate executive summary
-      this.log('📝 Preparing comprehensive executive summary...', 'progress');
-      const executiveSummary = await this.generateExecutiveSummary(reposWithMessages, onProgress);
-      
-      // 5. Compile final report
-      const report = await this.generateChangeReport(reposWithMessages, executiveSummary);
+      // 4. Compile final report
+      const report = await this.generateChangeReport(reposWithMessages);
       
       // Log appropriate completion message based on whether changes were found
       const changedRepoCount = repositories.filter(r => r.hasChanges).length;
@@ -790,8 +785,7 @@ export class GraphQLChangeReviewService {
    * Generate a complete change review report
    */
   private async generateChangeReport(
-    repositories: RepositoryChangeData[],
-    executiveSummary: string
+    repositories: RepositoryChangeData[]
   ): Promise<ChangeReviewReport> {
     const statistics = {
       totalFiles: 0,
@@ -824,7 +818,6 @@ export class GraphQLChangeReviewService {
     });
 
     return {
-      executiveSummary,
       generatedAt: new Date(),
       repositories,
       statistics,

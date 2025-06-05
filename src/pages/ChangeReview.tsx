@@ -480,7 +480,7 @@ export const ChangeReviewPage: React.FC = () => {
               label: 'Scanning Repositories',
               status: scanProgress.stage === 'scanning' ? 'loading' : 
                       scanProgress.stage === 'complete' || 
-                      ['analyzing', 'generating', 'summarizing'].includes(scanProgress.stage) ? 'success' : 'pending',
+                      ['analyzing', 'generating'].includes(scanProgress.stage) ? 'success' : 'pending',
               message: scanProgress.stage === 'scanning' ? scanProgress.message : undefined
             },
             {
@@ -488,23 +488,15 @@ export const ChangeReviewPage: React.FC = () => {
               label: 'Analyzing Changes',
               status: scanProgress.stage === 'analyzing' ? 'loading' : 
                       scanProgress.stage === 'complete' || 
-                      ['generating', 'summarizing'].includes(scanProgress.stage) ? 'success' : 'pending',
+                      ['generating'].includes(scanProgress.stage) ? 'success' : 'pending',
               message: scanProgress.stage === 'analyzing' ? scanProgress.message : undefined
             },
             {
               id: 'generating',
               label: 'Generating Commit Messages',
               status: scanProgress.stage === 'generating' ? 'loading' : 
-                      scanProgress.stage === 'complete' || 
-                      scanProgress.stage === 'summarizing' ? 'success' : 'pending',
-              message: scanProgress.stage === 'generating' ? scanProgress.message : undefined
-            },
-            {
-              id: 'summarizing',
-              label: 'Creating Executive Summary',
-              status: scanProgress.stage === 'summarizing' ? 'loading' : 
                       scanProgress.stage === 'complete' ? 'success' : 'pending',
-              message: scanProgress.stage === 'summarizing' ? scanProgress.message : undefined
+              message: scanProgress.stage === 'generating' ? scanProgress.message : undefined
             }
           ]}
           onClose={() => {
@@ -527,20 +519,18 @@ export const ChangeReviewPage: React.FC = () => {
       {/* Review Report */}
       {report && (
         <>
-          {/* Executive Summary */}
+          {/* Statistics */}
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="flex items-center">
                 <FileText className="mr-2 h-5 w-5" />
-                Executive Summary
+                Repository Statistics
               </CardTitle>
               <CardDescription>
                 Generated at {new Date(report.generatedAt).toLocaleString()}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="whitespace-pre-wrap text-sm">{report.executiveSummary}</div>
-              
               {/* Statistics */}
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
