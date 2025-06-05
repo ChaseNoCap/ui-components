@@ -20,17 +20,21 @@
   },
   "dependencies": {
     "@apollo/client": "^3.13.8",
+    "@graphql-sse/apollo-client": "^0.0.19",
+    "@graphql-sse/client": "^0.0.16",
     "@tanstack/react-query": "^5.17.19",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
     "graphql": "^16.11.0",
     "graphql-ws": "^5.16.2",
+    "graphql-yoga": "^5.13.5",
     "lucide-react": "^0.316.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.3",
     "recharts": "^2.10.4",
-    "subscriptions-transport-ws": "^0.11.0"
+    "subscriptions-transport-ws": "^0.11.0",
+    "urql": "^4.2.2"
   },
   "devDependencies": {
     "@graphql-codegen/cli": "^5.0.6",

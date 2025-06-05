@@ -8,14 +8,13 @@ import {
   gql
 } from '@apollo/client/core';
 import { getMainDefinition } from '@apollo/client/utilities';
-import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
-import { createClient } from 'graphql-ws';
 import { onError } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
+import { YogaSSELink } from './sse-link';
 
 // Environment configuration
-const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:3000/graphql';
-const WS_ENDPOINT = import.meta.env.VITE_WS_ENDPOINT || 'ws://localhost:3000/graphql';
+const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT || import.meta.env.VITE_GRAPHQL_URL || 'http://localhost:3000/graphql';
+const WS_ENDPOINT = import.meta.env.VITE_WS_ENDPOINT || import.meta.env.VITE_GRAPHQL_WS_URL || 'ws://localhost:3000/graphql';
 
 // Create HTTP link for queries and mutations
 const httpLink = createHttpLink({
@@ -23,19 +22,10 @@ const httpLink = createHttpLink({
   credentials: 'include', // Include cookies for auth
 });
 
-// Create WebSocket link for subscriptions
-const wsLink = new GraphQLWsLink(
-  createClient({
-    url: WS_ENDPOINT,
-    connectionParams: async () => ({
-      // Add auth token if available
-      authToken: localStorage.getItem('authToken'),
-    }),
-    shouldRetry: () => true,
-    retryAttempts: 5,
-    connectionAckWaitTimeout: 5000,
-  })
-);
+// Create SSE link for subscriptions with GraphQL Yoga
+const sseLink = new YogaSSELink({
+  uri: GRAPHQL_ENDPOINT,
+});
 
 // Enhanced retry link with federation awareness
 const retryLink = new RetryLink({
@@ -194,7 +184,7 @@ const timingLink = new ApolloLink((operation, forward) => {
   });
 });
 
-// Split traffic between WebSocket and HTTP
+// Split traffic between HTTP (queries/mutations) and SSE (subscriptions)
 const splitLink = split(
   ({ query }) => {
     const definition = getMainDefinition(query);
@@ -203,7 +193,7 @@ const splitLink = split(
       definition.operation === 'subscription'
     );
   },
-  wsLink,
+  sseLink,
   httpLink
 );
 

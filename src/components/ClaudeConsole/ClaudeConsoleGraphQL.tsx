@@ -59,6 +59,14 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   // Load sessions on mount
   useEffect(() => {
     loadSessions();
+    
+    // Cleanup on unmount
+    return () => {
+      if ((window as any).__claudeUnsubscribe) {
+        (window as any).__claudeUnsubscribe();
+        delete (window as any).__claudeUnsubscribe;
+      }
+    };
   }, []);
 
   const loadSessions = async () => {
@@ -149,26 +157,78 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       setMessages(prev => [...prev, processingMessage]);
 
       // Call Claude via GraphQL
-      console.log('Calling Claude via GraphQL with prompt:', input.trim());
+      console.log('Calling Claude via GraphQL with:', {
+        sessionId: currentSession?.id || null,
+        prompt: input.trim()
+      });
       const result = await claudeServiceGraphQL.executeCommand(
-        currentSession?.id || 'default',
+        currentSession?.id || null,
         input.trim()
       );
+      console.log('Claude command result:', result);
 
       // Remove processing message
       setMessages(prev => prev.filter(msg => msg.id !== processingMessage.id));
 
       if (result.success) {
+        // Store the new session ID if one was created
+        if (result.sessionId && !currentSession) {
+          const newSession: ClaudeSession = {
+            id: result.sessionId,
+            name: `Session ${new Date().toLocaleTimeString()}`,
+            createdAt: new Date(),
+            lastAccessed: new Date(),
+            messages: []
+          };
+          setCurrentSession(newSession);
+          setSessions(prev => [...prev, newSession]);
+        }
+
+        // Create a placeholder message that we'll update with the response
+        const assistantMessageId = crypto.randomUUID();
         const assistantMessage: ConsoleMessage = {
-          id: crypto.randomUUID(),
+          id: assistantMessageId,
           type: 'assistant',
-          content: result.response || '',
+          content: result.initialResponse || '',
           timestamp: new Date(),
           metadata: {
-            sessionId: currentSession?.id
+            sessionId: result.sessionId
           }
         };
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // Since we're getting the full response from the mutation now,
+        // we can skip the subscription and just set processing to false
+        setIsProcessing(false);
+        
+        // Optional: Keep subscription code commented out for future streaming support
+        /*
+        // Subscribe to command output for streaming responses
+        // Add a small delay to ensure the session is ready
+        setTimeout(() => {
+          const unsubscribe = claudeServiceGraphQL.subscribeToCommandOutput(
+            result.sessionId,
+            (output) => {
+              if (output.type === 'STDOUT' || output.type === 'FINAL') {
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantMessageId 
+                    ? { ...msg, content: msg.content + output.content }
+                    : msg
+                ));
+              }
+              
+              if (output.isFinal) {
+                // Clean up subscription when done
+                unsubscribe();
+                setIsProcessing(false);
+              }
+            }
+          );
+          
+          // Store unsubscribe function for cleanup
+          (window as any).__claudeUnsubscribe = unsubscribe;
+        }, 100); // Small delay to ensure session is created
+        */
       } else {
         throw new Error(result.error || 'Command execution failed');
       }
@@ -183,7 +243,6 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       };
       setMessages(prev => [...prev, errorMessage]);
       showError('Command failed', errorMessage.content);
-    } finally {
       setIsProcessing(false);
     }
   };

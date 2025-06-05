@@ -177,16 +177,28 @@ class ClaudeServiceGraphQL {
   /**
    * Execute Claude command
    */
-  async executeCommand(sessionId: string, prompt: string): Promise<any> {
+  async executeCommand(sessionId: string | null, prompt: string): Promise<any> {
     try {
+      if (!apolloClient) {
+        throw new Error('Apollo Client is not initialized');
+      }
+
+      logger.info('Executing Claude command', { sessionId, prompt });
+
       const { data } = await apolloClient.mutate({
         mutation: EXECUTE_CLAUDE_COMMAND,
-        variables: { sessionId, prompt }
+        variables: { 
+          input: {
+            prompt,
+            sessionId: sessionId && sessionId !== 'default' ? sessionId : undefined
+          }
+        }
       });
 
+      logger.info('Claude command executed successfully', { data });
       return data.executeCommand;
     } catch (error) {
-      logger.error('Failed to execute Claude command', { error });
+      logger.error('Failed to execute Claude command', { error, sessionId, prompt });
       throw error;
     }
   }

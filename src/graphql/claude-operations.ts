@@ -12,7 +12,7 @@ export const GENERATE_COMMIT_MESSAGES = gql`
 
 // Mutation to generate batch commit messages
 export const GENERATE_BATCH_COMMIT_MESSAGES = gql`
-  mutation GenerateBatchCommitMessages($repositories: [RepositoryChangesInput!]!) {
+  mutation GenerateBatchCommitMessages($repositories: [Claude_RepositoryChangesInput!]!) {
     generateBatchCommitMessages(repositories: $repositories) {
       repository
       message
@@ -23,7 +23,7 @@ export const GENERATE_BATCH_COMMIT_MESSAGES = gql`
 
 // Mutation to generate executive summary
 export const GENERATE_EXECUTIVE_SUMMARY = gql`
-  mutation GenerateExecutiveSummary($repositories: [RepositorySummaryInput!]!) {
+  mutation GenerateExecutiveSummary($repositories: [Claude_RepositorySummaryInput!]!) {
     generateExecutiveSummary(repositories: $repositories) {
       summary
       highlights
@@ -90,24 +90,32 @@ export const RETRY_BATCH_AGENT_RUNS = gql`
 
 // Mutation to execute Claude command
 export const EXECUTE_CLAUDE_COMMAND = gql`
-  mutation ExecuteCommand($sessionId: String!, $prompt: String!) {
-    executeCommand(sessionId: $sessionId, prompt: $prompt) {
+  mutation ExecuteCommand($input: Claude_ClaudeExecuteInput!) {
+    executeCommand(input: $input) {
+      sessionId
       success
-      response
-      toolCalls
       error
+      initialResponse
+      metadata {
+        startTime
+        pid
+        estimatedTime
+        flags
+      }
     }
   }
 `;
 
 // Subscription for command output
 export const COMMAND_OUTPUT_SUBSCRIPTION = gql`
-  subscription OnCommandOutput($sessionId: String!) {
+  subscription OnCommandOutput($sessionId: ID!) {
     commandOutput(sessionId: $sessionId) {
+      sessionId
       type
       content
       timestamp
-      metadata
+      isFinal
+      tokens
     }
   }
 `;
@@ -126,19 +134,4 @@ export const AGENT_RUN_PROGRESS_SUBSCRIPTION = gql`
   }
 `;
 
-// Input types
-export const REPOSITORY_CHANGES_INPUT = gql`
-  input RepositoryChangesInput {
-    path: String!
-    changes: String!
-  }
-`;
-
-export const REPOSITORY_SUMMARY_INPUT = gql`
-  input RepositorySummaryInput {
-    path: String!
-    name: String!
-    changes: String!
-    commitCount: Int!
-  }
-`;
+// Note: Input types are defined in the schema and prefixed with service name in federation

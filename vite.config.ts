@@ -14,6 +14,8 @@ export default defineConfig({
       '@/contexts': path.resolve(__dirname, './src/contexts'),
       '@/types': path.resolve(__dirname, './src/types'),
       '@/utils': path.resolve(__dirname, './src/utils'),
+      '@/lib': path.resolve(__dirname, './src/lib'),
+      '@/graphql': path.resolve(__dirname, './src/graphql'),
     },
   },
   server: {
