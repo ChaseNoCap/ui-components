@@ -23,11 +23,33 @@ export default {
       },
       animation: {
         'shimmer': 'shimmer 2s infinite',
+        'slide-in': 'slideIn 0.3s ease-out',
+        'slide-out': 'slideOut 0.3s ease-in',
       },
       keyframes: {
         shimmer: {
           '0%': { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
+        },
+        slideIn: {
+          '0%': { 
+            transform: 'translateX(100%)',
+            opacity: '0'
+          },
+          '100%': { 
+            transform: 'translateX(0)',
+            opacity: '1'
+          },
+        },
+        slideOut: {
+          '0%': { 
+            transform: 'translateX(0)',
+            opacity: '1'
+          },
+          '100%': { 
+            transform: 'translateX(100%)',
+            opacity: '0'
+          },
         },
       },
     },

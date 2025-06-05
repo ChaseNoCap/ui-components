@@ -77,7 +77,7 @@ export const App: React.FC = () => {
         <QueryClientProvider client={queryClient}>
           <GraphQLProvider>
             <TokenValidationProvider>
-              <ToastProvider position="top-right">
+              <ToastProvider position="bottom-center">
                 <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
                   <DashboardContent />
                   <ReactQueryDevtools initialIsOpen={false} />

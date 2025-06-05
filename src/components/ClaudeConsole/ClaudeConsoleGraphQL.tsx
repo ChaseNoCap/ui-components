@@ -1,10 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Terminal, Send, Loader2, Copy, Trash2, History, ChevronRight, Download } from 'lucide-react';
+import { 
+  Terminal, Send, Loader2, Copy, Trash2, History, ChevronRight, 
+  Download, GitBranch, FileText, Archive, Share2, BarChart3,
+  Zap, Users, DollarSign, Brain, Settings, FolderOpen, Tag,
+  Sparkles, AlertCircle
+} from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useToastContext } from '../Toast';
 import { claudeSessionManager } from '../../services/claudeSessionManager';
 import { claudeServiceGraphQL } from '../../services/claudeServiceGraphQL';
 import { format } from 'date-fns';
+import { useMutation, useQuery } from '@apollo/client';
+import {
+  FORK_SESSION,
+  CREATE_SESSION_TEMPLATE,
+  CREATE_SESSION_FROM_TEMPLATE,
+  GET_SESSION_TEMPLATES,
+  BATCH_SESSION_OPERATION,
+  GET_SESSION_ANALYTICS,
+  ARCHIVE_SESSION,
+  SHARE_SESSION
+} from '../../graphql/claude-session-management';
+import { SessionAnalytics } from './SessionAnalytics';
+import { TemplatesPanel } from './TemplatesPanel';
+import { ResumptionCard } from './ResumptionCard';
+import { GET_RESUMABLE_SESSIONS } from '../../graphql/claude-session-management';
 
 interface ConsoleMessage {
   id: string;
@@ -43,9 +63,34 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSessionPanel, setShowSessionPanel] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const consoleRef = useRef<HTMLDivElement>(null);
+
+  // GraphQL Mutations
+  const [forkSession] = useMutation(FORK_SESSION);
+  const [createTemplate] = useMutation(CREATE_SESSION_TEMPLATE);
+  const [createFromTemplate] = useMutation(CREATE_SESSION_FROM_TEMPLATE);
+  const [batchOperation] = useMutation(BATCH_SESSION_OPERATION);
+  const [archiveSessionMutation] = useMutation(ARCHIVE_SESSION);
+  const [shareSessionMutation] = useMutation(SHARE_SESSION);
+
+  // GraphQL Queries
+  const { data: templatesData, loading: templatesLoading } = useQuery(GET_SESSION_TEMPLATES, {
+    skip: !showTemplates
+  });
+  const { data: analyticsData, loading: analyticsLoading } = useQuery(GET_SESSION_ANALYTICS, {
+    variables: { sessionId: currentSession?.id },
+    skip: !currentSession?.id || !showAnalytics
+  });
+  const { data: resumableData, loading: resumableLoading } = useQuery(GET_RESUMABLE_SESSIONS, {
+    variables: { limit: 3 },
+    skip: currentSession !== null
+  });
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -297,6 +342,171 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
     }
   };
 
+  // New session management functions
+  const handleForkSession = async (messageIndex?: number) => {
+    if (!currentSession) return;
+
+    try {
+      const { data } = await forkSession({
+        variables: {
+          input: {
+            sessionId: currentSession.id,
+            messageIndex: messageIndex || messages.length - 1,
+            name: `Fork of ${currentSession.name}`,
+            includeHistory: true
+          }
+        }
+      });
+
+      if (data?.forkSession) {
+        showSuccess('Session forked', `Created at message ${data.forkSession.forkMetadata.forkPoint}`);
+        await loadSessions();
+        loadSession(data.forkSession.session.id);
+      }
+    } catch (error) {
+      showError('Failed to fork session', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!currentSession) return;
+
+    const templateName = prompt('Template name:');
+    if (!templateName) return;
+
+    const description = prompt('Template description (optional):');
+    const tags = prompt('Tags (comma-separated, optional):')?.split(',').map(t => t.trim()).filter(Boolean);
+
+    try {
+      const { data } = await createTemplate({
+        variables: {
+          input: {
+            sessionId: currentSession.id,
+            name: templateName,
+            description,
+            tags,
+            includeHistory: false
+          }
+        }
+      });
+
+      if (data?.createSessionTemplate) {
+        showSuccess('Template created', templateName);
+      }
+    } catch (error) {
+      showError('Failed to create template', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleCreateFromTemplate = async (templateId: string) => {
+    const sessionName = prompt('Session name:');
+    
+    try {
+      const { data } = await createFromTemplate({
+        variables: {
+          templateId,
+          name: sessionName
+        }
+      });
+
+      if (data?.createSessionFromTemplate) {
+        showSuccess('Session created from template');
+        await loadSessions();
+        loadSession(data.createSessionFromTemplate.id);
+      }
+    } catch (error) {
+      showError('Failed to create session', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleBatchOperation = async (operation: string) => {
+    if (selectedSessions.size === 0) {
+      showError('No sessions selected');
+      return;
+    }
+
+    try {
+      const { data } = await batchOperation({
+        variables: {
+          input: {
+            sessionIds: Array.from(selectedSessions),
+            operation
+          }
+        }
+      });
+
+      if (data?.batchSessionOperation) {
+        showSuccess(
+          'Batch operation completed',
+          `${data.batchSessionOperation.successCount}/${data.batchSessionOperation.totalProcessed} successful`
+        );
+        
+        if (operation === 'DELETE' || operation === 'ARCHIVE') {
+          await loadSessions();
+          setSelectedSessions(new Set());
+          setIsSelectionMode(false);
+        }
+      }
+    } catch (error) {
+      showError('Batch operation failed', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleArchiveSession = async (sessionId: string) => {
+    try {
+      const { data } = await archiveSessionMutation({
+        variables: { sessionId }
+      });
+
+      if (data?.archiveSession) {
+        showSuccess('Session archived', `Compressed to ${(data.archiveSession.sizeBytes / 1024).toFixed(2)}KB`);
+        await loadSessions();
+      }
+    } catch (error) {
+      showError('Failed to archive session', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleShareSession = async () => {
+    if (!currentSession) return;
+
+    const recipients = prompt('Share with (comma-separated emails):')?.split(',').map(e => e.trim());
+    if (!recipients || recipients.length === 0) return;
+
+    try {
+      const { data } = await shareSessionMutation({
+        variables: {
+          input: {
+            sessionId: currentSession.id,
+            recipients,
+            permission: 'VIEW',
+            message: 'Shared via Claude Console'
+          }
+        }
+      });
+
+      if (data?.shareSession) {
+        showSuccess('Session shared', `Share code: ${data.shareSession.shareCode}`);
+        await navigator.clipboard.writeText(data.shareSession.shareUrl);
+        showInfo('Share URL copied to clipboard');
+      }
+    } catch (error) {
+      showError('Failed to share session', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const toggleSessionSelection = (sessionId: string) => {
+    setSelectedSessions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sessionId)) {
+        newSet.delete(sessionId);
+      } else {
+        newSet.add(sessionId);
+      }
+      return newSet;
+    });
+  };
+
   return (
     <div className="flex h-full">
       {/* Session Panel */}
@@ -316,18 +526,36 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
             {sessions.map(session => (
               <div
                 key={session.id}
-                className={`p-2 rounded cursor-pointer transition-colors ${
+                className={`p-2 rounded transition-colors ${
                   currentSession?.id === session.id
                     ? 'bg-blue-100 dark:bg-blue-900'
                     : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                onClick={() => loadSession(session.id)}
+                } ${isSelectionMode ? 'cursor-default' : 'cursor-pointer'}`}
+                onClick={() => !isSelectionMode && loadSession(session.id)}
               >
-                <div className="text-sm font-medium text-gray-900 dark:text-white">
-                  {session.name}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {format(session.lastAccessed, 'MMM d, h:mm a')}
+                <div className="flex items-start space-x-2">
+                  {isSelectionMode && (
+                    <input
+                      type="checkbox"
+                      checked={selectedSessions.has(session.id)}
+                      onChange={() => toggleSessionSelection(session.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-1"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      {session.name}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {format(session.lastAccessed, 'MMM d, h:mm a')}
+                    </div>
+                    {session.metadata?.totalCost && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Cost: ${session.metadata.totalCost.toFixed(4)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -335,8 +563,18 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
         </div>
       )}
 
+      {/* Templates Panel */}
+      {showTemplates && (
+        <TemplatesPanel
+          templatesData={templatesData}
+          loading={templatesLoading}
+          onClose={() => setShowTemplates(false)}
+          onCreateFromTemplate={handleCreateFromTemplate}
+        />
+      )}
+
       {/* Main Console */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col relative">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-4">
@@ -357,6 +595,59 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
           </div>
           
           <div className="flex items-center space-x-2">
+            {currentSession && (
+              <>
+                <button
+                  onClick={() => handleForkSession()}
+                  className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Fork session"
+                >
+                  <GitBranch className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={handleCreateTemplate}
+                  className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Create template"
+                >
+                  <FileText className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={handleShareSession}
+                  className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Share session"
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => handleArchiveSession(currentSession.id)}
+                  className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                  title="Archive session"
+                >
+                  <Archive className="h-4 w-4" />
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              title="Session analytics"
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setShowTemplates(!showTemplates)}
+              className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              title="Templates"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setIsSelectionMode(!isSelectionMode)}
+              className={`p-2 ${isSelectionMode ? 'text-blue-600' : 'text-gray-600'} hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300`}
+              title="Batch operations"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
             <button
               onClick={clearSession}
               className="p-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
@@ -374,17 +665,86 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
           </div>
         </div>
 
+        {/* Batch Operations Toolbar */}
+        {isSelectionMode && selectedSessions.size > 0 && (
+          <div className="p-2 bg-blue-50 dark:bg-blue-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-blue-700 dark:text-blue-300">
+                {selectedSessions.size} session{selectedSessions.size > 1 ? 's' : ''} selected
+              </span>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleBatchOperation('ARCHIVE')}
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Archive Selected
+                </button>
+                <button
+                  onClick={() => handleBatchOperation('EXPORT')}
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Export Selected
+                </button>
+                <button
+                  onClick={() => handleBatchOperation('DELETE')}
+                  className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Delete Selected
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedSessions(new Set());
+                    setIsSelectionMode(false);
+                  }}
+                  className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         <div 
           ref={consoleRef}
           className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900"
         >
           {messages.length === 0 && (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              <Terminal className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Start a conversation with Claude</p>
-              <p className="text-sm mt-2">Type a message below to begin</p>
-            </div>
+            <>
+              {/* Resumable Sessions */}
+              {!currentSession && resumableData?.resumableSessions?.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center">
+                    <Sparkles className="h-4 w-4 mr-1" />
+                    Resume Previous Sessions
+                  </h3>
+                  {resumableData.resumableSessions.map((item: any) => (
+                    <ResumptionCard
+                      key={item.session.id}
+                      session={item.session}
+                      resumptionData={item.resumptionData}
+                      onResume={async (sessionId, prompt) => {
+                        await loadSession(sessionId);
+                        if (prompt) {
+                          setInput(prompt);
+                        }
+                      }}
+                      onDismiss={() => {
+                        // In a real app, this would update user preferences
+                        console.log('Dismissed resumption for', item.session.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <Terminal className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Start a conversation with Claude</p>
+                <p className="text-sm mt-2">Type a message below to begin</p>
+              </div>
+            </>
           )}
           
           {messages.map((message) => (
@@ -412,12 +772,22 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
                     </pre>
                   </div>
                   {message.type === 'assistant' && (
-                    <button
-                      onClick={() => copyToClipboard(message.content)}
-                      className="ml-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
+                    <div className="ml-4 flex items-center space-x-1">
+                      <button
+                        onClick={() => copyToClipboard(message.content)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        title="Copy"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleForkSession(messages.indexOf(message))}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        title="Fork from here"
+                      >
+                        <GitBranch className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 
@@ -483,6 +853,15 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
             </button>
           </form>
         </div>
+
+        {/* Analytics Panel */}
+        {showAnalytics && currentSession && (
+          <SessionAnalytics
+            analyticsData={analyticsData}
+            loading={analyticsLoading}
+            onClose={() => setShowAnalytics(false)}
+          />
+        )}
       </div>
     </div>
   );

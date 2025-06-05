@@ -19,7 +19,7 @@ interface ToastProviderProps {
 
 export const ToastProvider: React.FC<ToastProviderProps> = ({ 
   children, 
-  position = 'top-right' 
+  position = 'bottom-center' 
 }) => {
   const toast = useToast();
 

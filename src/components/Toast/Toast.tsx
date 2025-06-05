@@ -68,7 +68,7 @@ export const Toast: React.FC<ToastProps> = ({
 
   return (
     <div
-      className={`pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border shadow-lg transition-all ${style.container}`}
+      className={`pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border shadow-lg transition-all transform ${style.container}`}
       role="alert"
     >
       <div className="p-4">
@@ -76,20 +76,20 @@ export const Toast: React.FC<ToastProps> = ({
           <div className="flex-shrink-0">
             <Icon className={`h-5 w-5 ${style.icon}`} aria-hidden="true" />
           </div>
-          <div className="ml-3 w-0 flex-1">
+          <div className="ml-3 flex-1">
             <p className={`text-sm font-medium ${style.title}`}>{title}</p>
             {message && (
               <p className={`mt-1 text-sm ${style.message}`}>{message}</p>
             )}
           </div>
-          <div className="ml-4 flex flex-shrink-0">
+          <div className="ml-4 flex-shrink-0">
             <button
               type="button"
               className={`inline-flex rounded-md hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-offset-2 ${style.icon}`}
               onClick={() => onClose(id)}
             >
               <span className="sr-only">Close</span>
-              <X className="h-5 w-5" aria-hidden="true" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
