@@ -4,6 +4,10 @@ import {
   GENERATE_COMMIT_MESSAGES_MUTATION,
   BATCH_COMMIT_MUTATION
 } from '../graphql/operations';
+import {
+  HIERARCHICAL_COMMIT,
+  HIERARCHICAL_COMMIT_AND_PUSH
+} from '../graphql/git-operations';
 import type { 
   ChangeReviewReport, 
   RepositoryChangeData, 
@@ -679,24 +683,78 @@ export class GraphQLChangeReviewService {
    */
   async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<any> {
     try {
+      // Use hierarchical commit for proper submodule-first ordering
+      // Extract a common commit message - use the first non-submodule message or fallback
+      const parentRepoCommit = commits.find(c => !c.repoPath.includes('packages/'));
+      const message = parentRepoCommit?.message || commits[0]?.message || 'Update multiple repositories';
+      
       const input = {
-        commits: commits.map(commit => ({
-          repository: commit.repoPath,
-          message: commit.message,
-          files: [], // Empty means commit all
-          stageAll: true
-        })),
-        continueOnError: true
+        message,
+        stageAll: true
       };
 
       const { data } = await client.mutate({
-        mutation: BATCH_COMMIT_MUTATION,
+        mutation: HIERARCHICAL_COMMIT,
         variables: { input }
       });
 
-      return data.batchCommit;
+      // Transform hierarchical result to match expected format
+      const results = [];
+      
+      // Add submodule results
+      if (data.hierarchicalCommit.submoduleCommits) {
+        data.hierarchicalCommit.submoduleCommits.forEach((commit: any) => {
+          const repoName = commit.repository.split('/').pop() || commit.repository;
+          results.push({
+            repository: repoName,
+            success: commit.success,
+            commitHash: commit.commitHash,
+            error: commit.error
+          });
+        });
+      }
+      
+      // Add parent result
+      if (data.hierarchicalCommit.parentCommit) {
+        const parent = data.hierarchicalCommit.parentCommit;
+        results.push({
+          repository: 'meta-gothic-framework',
+          success: parent.success,
+          commitHash: parent.commitHash,
+          error: parent.error
+        });
+      }
+
+      return {
+        success: data.hierarchicalCommit.success,
+        results,
+        totalRepositories: data.hierarchicalCommit.totalRepositories,
+        successCount: data.hierarchicalCommit.successCount
+      };
     } catch (error) {
-      console.error('Error batch committing:', error);
+      console.error('Error with hierarchical commit:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Hierarchical commit and push - commits submodules first, then parent, then pushes all
+   */
+  async hierarchicalCommitAndPush(message: string): Promise<any> {
+    try {
+      const input = {
+        message,
+        stageAll: true
+      };
+
+      const { data } = await client.mutate({
+        mutation: HIERARCHICAL_COMMIT_AND_PUSH,
+        variables: { input }
+      });
+
+      return data.hierarchicalCommitAndPush;
+    } catch (error) {
+      console.error('Error with hierarchical commit and push:', error);
       throw error;
     }
   }
@@ -1084,5 +1142,9 @@ export const graphqlChangeReviewService = {
         error: 'Push functionality not yet implemented in GraphQL'
       }))
     };
+  },
+  
+  async hierarchicalCommitAndPush(message: string): Promise<any> {
+    return service.hierarchicalCommitAndPush(message);
   }
 };

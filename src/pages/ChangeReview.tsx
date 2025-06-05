@@ -269,6 +269,71 @@ export const ChangeReviewPage: React.FC = () => {
         hash: rh.previousHash
       })));
       
+      // Use a common commit message (from the first non-submodule repo or fallback)
+      const parentRepo = reposToCommit.find(r => !r.path.includes('packages/'));
+      const commonMessage = parentRepo?.generatedCommitMessage || reposToCommit[0]?.generatedCommitMessage || 'Update multiple repositories';
+      
+      if (shouldPush) {
+        // Use hierarchical commit and push for proper ordering
+        const result = await (reviewService as any).hierarchicalCommitAndPush?.(commonMessage);
+        
+        if (result) {
+          // Process commit results
+          if (result.commitResult) {
+            const commitResult = result.commitResult;
+            if (commitResult.success) {
+              toast.success(`Successfully committed ${commitResult.successCount}/${commitResult.totalRepositories} repositories`);
+            } else {
+              toast.error(`Commit partially failed: ${commitResult.error || 'Unknown error'}`);
+            }
+            
+            // Show individual commit results
+            commitResult.submoduleCommits?.forEach((commit: any) => {
+              if (commit.success) {
+                console.log(`✓ Committed ${commit.repository}`);
+              } else {
+                console.error(`✗ Failed ${commit.repository}: ${commit.error}`);
+              }
+            });
+            
+            if (commitResult.parentCommit?.success) {
+              console.log(`✓ Committed meta-gothic-framework`);
+            }
+          }
+          
+          // Process push results
+          if (result.pushResults) {
+            result.pushResults.forEach((push: any) => {
+              if (push.success) {
+                toast.success(`Successfully pushed ${push.repository}`);
+              } else {
+                toast.error(`Failed to push ${push.repository}: ${push.error || 'Unknown error'}`);
+              }
+            });
+          }
+          
+          // Refresh if any commits succeeded
+          if (result.commitResult?.successCount > 0) {
+            setIsRefreshing(true);
+            await waitForBatchCompletion([]);
+          }
+        } else {
+          // Fallback to regular batch commit if hierarchical not available
+          await commitAllWithBatch();
+        }
+      } else {
+        // Just commit without push - use hierarchical commit
+        await commitAllWithBatch();
+      }
+    } catch (err) {
+      toast.error(`Commit operation failed: ${err}`);
+    } finally {
+      // Clear all committing states
+      setCommittingRepos(new Set());
+    }
+    
+    // Helper function for batch commit
+    async function commitAllWithBatch() {
       const commits = reposToCommit.map(repo => ({
         repoPath: repo.path,
         message: repo.generatedCommitMessage!
@@ -277,38 +342,20 @@ export const ChangeReviewPage: React.FC = () => {
       const result = await reviewService.batchCommit(commits);
       
       // Process results
-      const successfulRepos: string[] = [];
-      result.results.forEach(res => {
+      result.results.forEach((res: any) => {
         if (res.success) {
           toast.success(`Successfully committed ${res.repository}`);
-          const repo = reposToCommit.find(r => r.name === res.repository);
-          if (repo) {
-            successfulRepos.push(repo.path);
-          }
         } else {
           toast.error(`Failed to commit ${res.repository}: ${res.error || 'Unknown error'}`);
         }
       });
       
-      // Push if requested
-      if (shouldPush && successfulRepos.length > 0) {
-        const pushResult = await reviewService.batchPush(successfulRepos);
-        pushResult.results.forEach(res => {
-          if (res.success) {
-            toast.success(`Successfully pushed ${res.repository} to origin/${res.branch}`);
-          } else {
-            toast.error(`Failed to push ${res.repository}: ${res.error || 'Unknown error'}`);
-          }
-        });
-      }
-      
-      // Refresh the report to reflect the committed changes
-      if (result.results.some(res => res.success)) {
-        // Wait for all successful commits to complete properly
+      // Refresh if any commits succeeded
+      if (result.results.some((res: any) => res.success)) {
         setIsRefreshing(true);
         const successfulCommits = result.results
-          .filter(res => res.success)
-          .map(res => {
+          .filter((res: any) => res.success)
+          .map((res: any) => {
             const repoHash = repoHashes.find(rh => rh.repo.name === res.repository);
             return repoHash ? { 
               path: repoHash.repo.path, 
@@ -318,15 +365,9 @@ export const ChangeReviewPage: React.FC = () => {
           .filter(Boolean) as Array<{ path: string; previousCommitHash?: string }>;
         
         await waitForBatchCompletion(successfulCommits);
-        // The onComplete callback in the hook will handle refreshing
       }
-    } catch (err) {
-      toast.error(`Batch commit failed: ${err}`);
-    } finally {
-      // Clear all committing states
-      setCommittingRepos(new Set());
     }
-  }, [report, startReview, getLatestCommitHash, waitForBatchCompletion]);
+  }, [report, reviewService, getLatestCommitHash, waitForBatchCompletion]);
 
   // Load data on mount - use empty dependency array to ensure it only runs once
   useEffect(() => {

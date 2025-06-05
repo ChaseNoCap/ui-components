@@ -209,3 +209,77 @@ export const COMMIT_INPUT_TYPE = gql`
     files: [String!]
   }
 `;
+
+// Mutation for hierarchical commit (submodules first, then parent)
+export const HIERARCHICAL_COMMIT = gql`
+  mutation HierarchicalCommit($input: HierarchicalCommitInput!) {
+    hierarchicalCommit(input: $input) {
+      success
+      totalRepositories
+      successCount
+      submoduleCommits {
+        success
+        commitHash
+        error
+        repository
+        committedFiles
+        isClean
+        remainingFiles
+      }
+      parentCommit {
+        success
+        commitHash
+        error
+        repository
+        committedFiles
+        isClean
+        remainingFiles
+      }
+      executionTime
+      error
+    }
+  }
+`;
+
+// Mutation for hierarchical commit and push
+export const HIERARCHICAL_COMMIT_AND_PUSH = gql`
+  mutation HierarchicalCommitAndPush($input: HierarchicalCommitInput!) {
+    hierarchicalCommitAndPush(input: $input) {
+      success
+      commitResult {
+        success
+        totalRepositories
+        successCount
+        submoduleCommits {
+          success
+          commitHash
+          error
+          repository
+          committedFiles
+          isClean
+          remainingFiles
+        }
+        parentCommit {
+          success
+          commitHash
+          error
+          repository
+          committedFiles
+          isClean
+          remainingFiles
+        }
+        executionTime
+        error
+      }
+      pushResults {
+        success
+        remote
+        branch
+        error
+        repository
+      }
+      executionTime
+      error
+    }
+  }
+`;
