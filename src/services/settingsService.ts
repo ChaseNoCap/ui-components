@@ -9,6 +9,10 @@ interface UserSettings {
   modalSettings: {
     graphqlProgress: ModalSettings;
   };
+  debugOptions: {
+    showGraphQLDebug: boolean;
+    showTanStackDevTools: boolean;
+  };
   // Add more settings here as needed
 }
 
@@ -19,6 +23,10 @@ const DEFAULT_SETTINGS: UserSettings = {
       autoClose: false,
       autoCloseDelay: 3000
     }
+  },
+  debugOptions: {
+    showGraphQLDebug: false,
+    showTanStackDevTools: false
   }
 };
 
@@ -74,6 +82,10 @@ class SettingsService {
       modalSettings: {
         ...defaults.modalSettings,
         ...saved.modalSettings
+      },
+      debugOptions: {
+        ...defaults.debugOptions,
+        ...saved.debugOptions
       }
     };
   }

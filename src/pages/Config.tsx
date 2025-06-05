@@ -26,10 +26,21 @@ const Config: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [debugSettings, setDebugSettings] = useState(settingsService.getSettings().debugOptions);
 
   // Load configuration on mount
   useEffect(() => {
     loadConfig();
+  }, []);
+
+  // Listen for settings changes
+  useEffect(() => {
+    const handleSettingsChange = () => {
+      setDebugSettings(settingsService.getSettings().debugOptions);
+    };
+    
+    window.addEventListener('settings-changed', handleSettingsChange);
+    return () => window.removeEventListener('settings-changed', handleSettingsChange);
   }, []);
 
   // Save configuration with debouncing
@@ -263,6 +274,63 @@ const Config: React.FC = () => {
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Debug Options */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Developer Tools</CardTitle>
+            <CardDescription>
+              Enable debugging tools and performance monitoring (only visible in development mode)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="graphql-debug">GraphQL Debug Panel</Label>
+                <p className="text-sm text-muted-foreground">
+                  Shows GraphQL query debugger for testing queries
+                </p>
+              </div>
+              <Switch
+                id="graphql-debug"
+                checked={debugSettings.showGraphQLDebug}
+                onCheckedChange={(checked) => {
+                  const settings = settingsService.getSettings();
+                  settings.debugOptions.showGraphQLDebug = checked;
+                  settingsService.saveSettings(settings);
+                  setDebugSettings({ ...debugSettings, showGraphQLDebug: checked });
+                }}
+              />
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="tanstack-devtools">TanStack Query DevTools</Label>
+                <p className="text-sm text-muted-foreground">
+                  Shows React Query DevTools for REST API debugging
+                </p>
+              </div>
+              <Switch
+                id="tanstack-devtools"
+                checked={debugSettings.showTanStackDevTools}
+                onCheckedChange={(checked) => {
+                  const settings = settingsService.getSettings();
+                  settings.debugOptions.showTanStackDevTools = checked;
+                  settingsService.saveSettings(settings);
+                  setDebugSettings({ ...debugSettings, showTanStackDevTools: checked });
+                }}
+              />
+            </div>
+            
+            {process.env.NODE_ENV === 'production' && (
+              <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950 p-3">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  <strong>Note:</strong> Debug tools are disabled in production mode for security reasons.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

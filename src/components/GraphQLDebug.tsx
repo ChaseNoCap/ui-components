@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, gql } from '@apollo/client';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
-import { SystemHealthMonitor } from './GraphQLDebug/SystemHealthMonitor';
+import { settingsService } from '../services/settingsService';
 
 const TEST_QUERY = gql`
   query DebugScanAllDetailed {
@@ -21,6 +21,27 @@ const TEST_QUERY = gql`
 
 export const GraphQLDebug: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  
+  // Listen for settings changes
+  useEffect(() => {
+    const checkSettings = () => {
+      const settings = settingsService.getSettings();
+      setDebugEnabled(settings.debugOptions.showGraphQLDebug);
+    };
+    
+    // Check initial settings
+    checkSettings();
+    
+    // Listen for changes
+    const handleSettingsChange = () => checkSettings();
+    window.addEventListener('settings-changed', handleSettingsChange);
+    
+    return () => {
+      window.removeEventListener('settings-changed', handleSettingsChange);
+    };
+  }, []);
+  
   const { data, loading, error, refetch } = useQuery(TEST_QUERY, {
     skip: !showDebug,
     fetchPolicy: 'network-only',
@@ -33,7 +54,9 @@ export const GraphQLDebug: React.FC = () => {
     }
   });
 
-  if (process.env.NODE_ENV !== 'development') {
+  // Show only if: NOT in production AND debug is enabled in config
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction || !debugEnabled) {
     return null;
   }
 
@@ -112,11 +135,6 @@ export const GraphQLDebug: React.FC = () => {
             </div>
           </div>
         </Card>
-      )}
-      {showDebug && (
-        <div className="fixed bottom-20 right-4 z-50 mb-4">
-          <SystemHealthMonitor />
-        </div>
       )}
     </div>
   );

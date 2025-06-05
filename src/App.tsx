@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { HealthDashboard } from './components/HealthDashboard';
 import { ToolsGraphQL } from './pages/ToolsGraphQL';
 import { ChangeReviewPage } from './pages/ChangeReview';
@@ -15,6 +14,7 @@ import { ToastProvider } from './components/Toast';
 import { GraphQLProvider } from './providers/GraphQLProvider';
 import Config from './pages/Config';
 import { GraphQLDebug } from './components/GraphQLDebug';
+import { ConditionalDevTools } from './components/ConditionalDevTools';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,7 +80,7 @@ export const App: React.FC = () => {
               <ToastProvider position="bottom-center">
                 <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
                   <DashboardContent />
-                  <ReactQueryDevtools initialIsOpen={false} />
+                  <ConditionalDevTools />
                 </Router>
               </ToastProvider>
             </TokenValidationProvider>
