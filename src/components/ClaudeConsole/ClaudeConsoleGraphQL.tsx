@@ -79,20 +79,12 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   };
 
   const createNewSession = async (name?: string) => {
-    const session: Session = {
-      id: crypto.randomUUID(),
-      name: name || `Session ${new Date().toLocaleString()}`,
-      createdAt: new Date(),
-      lastAccessed: new Date(),
-      messages: [],
-      metadata: {}
-    };
-
-    setCurrentSession(session);
+    // Clear current session to force server to create a new one
+    setCurrentSession(null);
     setMessages([]);
-    setSessions(prev => [session, ...prev]);
-    await claudeSessionManager.saveSession(session);
-    showSuccess('New session created', session.name);
+    showSuccess('New session created', name || 'New Session');
+    
+    // The actual session will be created on the first message
   };
 
   const loadSession = async (sessionId: string) => {
@@ -171,17 +163,28 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       setMessages(prev => prev.filter(msg => msg.id !== processingMessage.id));
 
       if (result.success) {
-        // Store the new session ID if one was created
-        if (result.sessionId && !currentSession) {
-          const newSession: ClaudeSession = {
-            id: result.sessionId,
-            name: `Session ${new Date().toLocaleTimeString()}`,
-            createdAt: new Date(),
-            lastAccessed: new Date(),
-            messages: []
-          };
-          setCurrentSession(newSession);
-          setSessions(prev => [...prev, newSession]);
+        // Always update the session ID from the server
+        if (result.sessionId) {
+          if (!currentSession || currentSession.id !== result.sessionId) {
+            const newSession: ClaudeSession = {
+              id: result.sessionId,
+              name: currentSession?.name || `Session ${new Date().toLocaleTimeString()}`,
+              createdAt: currentSession?.createdAt || new Date(),
+              lastAccessed: new Date(),
+              messages: currentSession?.messages || []
+            };
+            setCurrentSession(newSession);
+            
+            // Update or add the session in the list
+            setSessions(prev => {
+              const existing = prev.findIndex(s => s.id === result.sessionId);
+              if (existing >= 0) {
+                return prev.map((s, i) => i === existing ? newSession : s);
+              } else {
+                return [...prev, newSession];
+              }
+            });
+          }
         }
 
         // Create a placeholder message that we'll update with the response
