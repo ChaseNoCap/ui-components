@@ -46,7 +46,7 @@ export const ChangeReviewPage: React.FC = () => {
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
   const [showSubmoduleChanges, setShowSubmoduleChanges] = useState<Map<string, boolean>>(new Map());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [apiMode, setApiMode] = useState<'graphql' | 'graphql-parallel'>('graphql-parallel');
+  const [apiMode, setApiMode] = useState<'graphql' | 'graphql-parallel'>('graphql');
   const [logEntries, setLogEntries] = useState<Array<{
     timestamp: Date;
     message: string;
@@ -88,6 +88,9 @@ export const ChangeReviewPage: React.FC = () => {
 
   // Start comprehensive review
   const startReview = useCallback(async () => {
+    // Reset review state to allow refresh
+    reviewService.resetReviewState();
+    
     setIsScanning(true);
     setError(null);
     setScanProgress({ stage: 'scanning', message: 'Initializing...' });
@@ -325,13 +328,16 @@ export const ChangeReviewPage: React.FC = () => {
     }
   }, [report, startReview, getLatestCommitHash, waitForBatchCompletion]);
 
-  // Load data on mount
+  // Load data on mount - use empty dependency array to ensure it only runs once
   useEffect(() => {
     if (!hasInitialLoad) {
       setHasInitialLoad(true);
-      startReview();
+      // Delay slightly to ensure all state is initialized
+      setTimeout(() => {
+        startReview();
+      }, 100);
     }
-  }, [hasInitialLoad, startReview]);
+  }, []); // Empty dependency array - only run on mount
 
   // Handle auto-close preference changes
   const handleAutoCloseChange = useCallback((enabled: boolean) => {
