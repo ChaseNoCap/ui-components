@@ -17,6 +17,10 @@ export { changeReviewServiceGraphQL } from './changeReviewServiceGraphQL';
 export * from './claudeSessionManager';
 export * from './settingsService';
 
+// Git operation management
+export { GitOperationManager } from './GitOperationManager';
+export type { GitOperationOptions } from './GitOperationManager';
+
 // Legacy exports (deprecated - remove after migration verification)
 // export * from './api';
 // export * from './githubService';

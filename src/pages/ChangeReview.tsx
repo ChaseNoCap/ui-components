@@ -24,7 +24,7 @@ import {
   Upload
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
-import { useGitOperationCompletion } from '../hooks/useGitOperationCompletion';
+import { useGitOperationManager } from '../hooks/useGitOperationManager';
 import { toast } from '../lib/toast';
 import { settingsService } from '../services/settingsService';
 
@@ -56,23 +56,22 @@ export const ChangeReviewPage: React.FC = () => {
   // Create a ref to store the startReview function
   const startReviewRef = React.useRef<() => Promise<void>>();
 
-  // Use the git operation completion hook - defined after reviewService to avoid circular dependency
-  const { 
-    waitForCommitCompletion, 
-    waitForBatchCompletion,
+  // Use the git operation manager for sequential execution
+  const {
+    isProcessing: isWaiting,
+    executeOperations,
+    createCommitOperation,
+    createPushOperation,
     getLatestCommitHash,
-    isWaiting 
-  } = useGitOperationCompletion({
-    onComplete: () => {
-      // Refresh the review when operations complete
-      if (startReviewRef.current) {
+    progress: operationProgress
+  } = useGitOperationManager({
+    showToasts: false, // We'll handle toasts ourselves
+    onOperationComplete: () => {
+      // Refresh the review when all operations complete
+      if (startReviewRef.current && operationProgress.completed === operationProgress.total) {
         startReviewRef.current();
+        setIsRefreshing(false);
       }
-      setIsRefreshing(false);
-    },
-    onError: (error) => {
-      toast.error(`Git operation failed: ${error.message}`);
-      setIsRefreshing(false);
     }
   });
 
@@ -181,36 +180,54 @@ export const ChangeReviewPage: React.FC = () => {
     }
 
     setCommittingRepos(prev => new Set(prev).add(repo.name));
+    setIsRefreshing(true);
 
     try {
       // Get the current commit hash before committing
       const previousHash = await getLatestCommitHash(repo.path);
       console.log(`[ChangeReview] Single commit - captured hash for ${repo.name}: ${previousHash}`);
       
-      const result = await reviewService.commitRepository(
-        repo.path,
-        repo.generatedCommitMessage
-      );
+      const operations = [];
       
-      if (result.success) {
+      // Create commit operation
+      const commitOp = createCommitOperation(
+        `commit-${repo.name}`,
+        repo.name,
+        () => reviewService.commitRepository(repo.path, repo.generatedCommitMessage!),
+        previousHash
+      );
+      operations.push(commitOp);
+      
+      // Add push operation if requested
+      if (shouldPush) {
+        const pushOp = createPushOperation(
+          `push-${repo.name}`,
+          repo.name,
+          () => reviewService.pushRepository(repo.path)
+        );
+        operations.push(pushOp);
+      }
+      
+      // Execute operations sequentially
+      const results = await executeOperations(operations);
+      
+      // Check results
+      const commitResult = results[0];
+      if (commitResult && commitResult.success) {
         toast.success(`Successfully committed changes for ${repo.name}`);
         
-        if (shouldPush) {
-          const pushResult = await reviewService.pushRepository(repo.path);
-          if (pushResult.success) {
-            toast.success(`Successfully pushed ${repo.name} to origin/${pushResult.branch}`);
+        if (shouldPush && results[1]) {
+          if (results[1].success) {
+            const pushData = results[1].result;
+            toast.success(`Successfully pushed ${repo.name} to origin/${pushData.branch}`);
           } else {
-            toast.error(`Failed to push ${repo.name}: ${pushResult.error || 'Unknown error'}`);
+            toast.error(`Failed to push ${repo.name}: ${results[1].error?.message || 'Unknown error'}`);
           }
         }
         
-        // Wait for the commit to complete properly instead of using arbitrary delay
-        setIsRefreshing(true);
-        await waitForCommitCompletion(repo.path, previousHash || undefined);
-        
         return true;
       } else {
-        toast.error(`Failed to commit ${repo.name}: ${result.error || 'Unknown error'}`);
+        toast.error(`Failed to commit ${repo.name}: ${commitResult?.error?.message || 'Unknown error'}`);
         return false;
       }
     } catch (err) {
@@ -223,7 +240,7 @@ export const ChangeReviewPage: React.FC = () => {
         return newSet;
       });
     }
-  }, [getLatestCommitHash, waitForCommitCompletion]);
+  }, [getLatestCommitHash, createCommitOperation, createPushOperation, executeOperations, reviewService]);
 
   // Commit all repositories
   const commitAll = useCallback(async (shouldPush = false) => {
@@ -240,21 +257,9 @@ export const ChangeReviewPage: React.FC = () => {
     reposToCommit.forEach(repo => {
       setCommittingRepos(prev => new Set(prev).add(repo.name));
     });
+    setIsRefreshing(true);
     
     try {
-      // Get current commit hashes before committing
-      const repoHashes = await Promise.all(
-        reposToCommit.map(async repo => ({
-          repo,
-          previousHash: await getLatestCommitHash(repo.path)
-        }))
-      );
-      
-      console.log('[ChangeReview] Captured commit hashes:', repoHashes.map(rh => ({
-        repo: rh.repo.name,
-        hash: rh.previousHash
-      })));
-      
       // Use a common commit message (from the first non-submodule repo or fallback)
       const parentRepo = reposToCommit.find(r => !r.path.includes('packages/'));
       const commonMessage = parentRepo?.generatedCommitMessage || reposToCommit[0]?.generatedCommitMessage || 'Update multiple repositories';
@@ -297,19 +302,13 @@ export const ChangeReviewPage: React.FC = () => {
               }
             });
           }
-          
-          // Refresh if any commits succeeded
-          if (result.commitResult?.successCount > 0) {
-            setIsRefreshing(true);
-            await waitForBatchCompletion([]);
-          }
         } else {
-          // Fallback to regular batch commit if hierarchical not available
-          await commitAllWithBatch();
+          // Fallback to sequential commit using GitOperationManager
+          await commitAllSequentially(shouldPush);
         }
       } else {
-        // Just commit without push - use hierarchical commit
-        await commitAllWithBatch();
+        // Just commit without push - use sequential approach
+        await commitAllSequentially(false);
       }
     } catch (err) {
       toast.error(`Commit operation failed: ${err}`);
@@ -318,42 +317,75 @@ export const ChangeReviewPage: React.FC = () => {
       setCommittingRepos(new Set());
     }
     
-    // Helper function for batch commit
-    async function commitAllWithBatch() {
-      const commits = reposToCommit.map(repo => ({
-        repoPath: repo.path,
-        message: repo.generatedCommitMessage!
-      }));
+    // Helper function for sequential commit
+    async function commitAllSequentially(push: boolean) {
+      // Get current commit hashes before committing
+      const repoHashes = await Promise.all(
+        reposToCommit.map(async repo => ({
+          repo,
+          previousHash: await getLatestCommitHash(repo.path)
+        }))
+      );
       
-      const result = await reviewService.batchCommit(commits);
+      console.log('[ChangeReview] Captured commit hashes:', repoHashes.map(rh => ({
+        repo: rh.repo.name,
+        hash: rh.previousHash
+      })));
+      
+      // Build operations array - commits first, then pushes
+      const operations = [];
+      
+      // Add commit operations
+      for (const { repo, previousHash } of repoHashes) {
+        const commitOp = createCommitOperation(
+          `commit-${repo.name}`,
+          repo.name,
+          () => reviewService.commitRepository(repo.path, repo.generatedCommitMessage!),
+          previousHash
+        );
+        operations.push(commitOp);
+      }
+      
+      // Add push operations if requested
+      if (push) {
+        for (const { repo } of repoHashes) {
+          const pushOp = createPushOperation(
+            `push-${repo.name}`,
+            repo.name,
+            () => reviewService.pushRepository(repo.path)
+          );
+          operations.push(pushOp);
+        }
+      }
+      
+      // Execute all operations sequentially
+      const results = await executeOperations(operations);
       
       // Process results
-      result.results.forEach((res: any) => {
-        if (res.success) {
-          toast.success(`Successfully committed ${res.repository}`);
-        } else {
-          toast.error(`Failed to commit ${res.repository}: ${res.error || 'Unknown error'}`);
-        }
-      });
+      const commitCount = repoHashes.length;
+      const successfulCommits = results.slice(0, commitCount).filter(r => r.success).length;
+      const failedCommits = commitCount - successfulCommits;
       
-      // Refresh if any commits succeeded
-      if (result.results.some((res: any) => res.success)) {
-        setIsRefreshing(true);
-        const successfulCommits = result.results
-          .filter((res: any) => res.success)
-          .map((res: any) => {
-            const repoHash = repoHashes.find(rh => rh.repo.name === res.repository);
-            return repoHash ? { 
-              path: repoHash.repo.path, 
-              previousCommitHash: repoHash.previousHash ?? undefined 
-            } : null;
-          })
-          .filter(Boolean) as Array<{ path: string; previousCommitHash?: string }>;
+      if (failedCommits === 0) {
+        toast.success(`All ${successfulCommits} repositories committed successfully`);
+      } else {
+        toast.warning(`${successfulCommits} repositories committed, ${failedCommits} failed`);
+      }
+      
+      // Process push results if applicable
+      if (push) {
+        const pushResults = results.slice(commitCount);
+        const successfulPushes = pushResults.filter(r => r.success).length;
+        const failedPushes = pushResults.length - successfulPushes;
         
-        await waitForBatchCompletion(successfulCommits);
+        if (failedPushes === 0 && successfulPushes > 0) {
+          toast.success(`All ${successfulPushes} repositories pushed successfully`);
+        } else if (failedPushes > 0) {
+          toast.warning(`${successfulPushes} repositories pushed, ${failedPushes} failed`);
+        }
       }
     }
-  }, [report, reviewService, getLatestCommitHash, waitForBatchCompletion]);
+  }, [report, reviewService, getLatestCommitHash, createCommitOperation, createPushOperation, executeOperations]);
 
   // Load data on mount - use empty dependency array to ensure it only runs once
   useEffect(() => {
@@ -458,7 +490,7 @@ export const ChangeReviewPage: React.FC = () => {
               status: scanProgress.stage === 'scanning' ? 'loading' : 
                       scanProgress.stage === 'complete' || 
                       ['analyzing', 'generating'].includes(scanProgress.stage) ? 'success' : 'pending',
-              message: scanProgress.stage === 'scanning' ? scanProgress.message : undefined
+              message: scanProgress.stage === 'scanning' ? scanProgress.message : ''
             },
             {
               id: 'analyzing',
@@ -466,14 +498,14 @@ export const ChangeReviewPage: React.FC = () => {
               status: scanProgress.stage === 'analyzing' ? 'loading' : 
                       scanProgress.stage === 'complete' || 
                       ['generating'].includes(scanProgress.stage) ? 'success' : 'pending',
-              message: scanProgress.stage === 'analyzing' ? scanProgress.message : undefined
+              message: scanProgress.stage === 'analyzing' ? scanProgress.message : ''
             },
             {
               id: 'generating',
               label: 'Generating Commit Messages',
               status: scanProgress.stage === 'generating' ? 'loading' : 
                       scanProgress.stage === 'complete' ? 'success' : 'pending',
-              message: scanProgress.stage === 'generating' ? scanProgress.message : undefined
+              message: scanProgress.stage === 'generating' ? scanProgress.message : ''
             }
           ]}
           onClose={() => {

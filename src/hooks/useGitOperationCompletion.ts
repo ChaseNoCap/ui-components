@@ -32,6 +32,8 @@ interface UseGitOperationCompletionOptions {
   maxAttempts?: number;
   onComplete?: () => void;
   onError?: (error: Error) => void;
+  exponentialBackoff?: boolean;
+  maxBackoffInterval?: number;
 }
 
 export function useGitOperationCompletion(options: UseGitOperationCompletionOptions = {}) {
@@ -39,11 +41,14 @@ export function useGitOperationCompletion(options: UseGitOperationCompletionOpti
     pollingInterval = 500, // Poll every 500ms
     maxAttempts = 20, // Max 10 seconds
     onComplete,
-    onError
+    onError,
+    exponentialBackoff = true,
+    maxBackoffInterval = 5000 // Max 5 seconds between polls
   } = options;
 
   const [isWaiting, setIsWaiting] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  const [operationLock, setOperationLock] = useState<string | null>(null);
 
   /**
    * Wait for a commit operation to complete by checking if the repository is clean
@@ -118,8 +123,13 @@ export function useGitOperationCompletion(options: UseGitOperationCompletionOpti
             return;
           }
 
-          // Continue polling
-          setTimeout(checkStatus, pollingInterval);
+          // Continue polling with exponential backoff if enabled
+          const nextInterval = exponentialBackoff 
+            ? Math.min(pollingInterval * Math.pow(1.5, attemptCount - 1), maxBackoffInterval)
+            : pollingInterval;
+          
+          console.log(`[Git Operation] Next check in ${nextInterval}ms`);
+          setTimeout(checkStatus, nextInterval);
         } catch (error) {
           setIsWaiting(false);
           const err = error instanceof Error ? error : new Error('Failed to check repository status');
@@ -226,8 +236,13 @@ export function useGitOperationCompletion(options: UseGitOperationCompletionOpti
             return;
           }
 
-          // Continue polling
-          setTimeout(checkAllStatuses, pollingInterval);
+          // Continue polling with exponential backoff if enabled
+          const nextInterval = exponentialBackoff 
+            ? Math.min(pollingInterval * Math.pow(1.5, attemptCount - 1), maxBackoffInterval)
+            : pollingInterval;
+          
+          console.log(`[Git Operation] Next batch check in ${nextInterval}ms`);
+          setTimeout(checkAllStatuses, nextInterval);
         } catch (error) {
           setIsWaiting(false);
           const err = error instanceof Error ? error : new Error('Failed to check batch status');
@@ -259,11 +274,37 @@ export function useGitOperationCompletion(options: UseGitOperationCompletionOpti
     }
   }, []);
 
+  /**
+   * Acquire a lock for an operation to prevent concurrent git operations
+   */
+  const acquireOperationLock = useCallback((operationId: string): boolean => {
+    if (operationLock && operationLock !== operationId) {
+      console.warn(`[Git Operation] Cannot acquire lock for ${operationId}, currently locked by ${operationLock}`);
+      return false;
+    }
+    setOperationLock(operationId);
+    console.log(`[Git Operation] Lock acquired for ${operationId}`);
+    return true;
+  }, [operationLock]);
+
+  /**
+   * Release the operation lock
+   */
+  const releaseOperationLock = useCallback((operationId: string) => {
+    if (operationLock === operationId) {
+      setOperationLock(null);
+      console.log(`[Git Operation] Lock released for ${operationId}`);
+    }
+  }, [operationLock]);
+
   return {
     isWaiting,
     attempts,
     waitForCommitCompletion,
     waitForBatchCompletion,
-    getLatestCommitHash
+    getLatestCommitHash,
+    acquireOperationLock,
+    releaseOperationLock,
+    hasOperationLock: !!operationLock
   };
 }
