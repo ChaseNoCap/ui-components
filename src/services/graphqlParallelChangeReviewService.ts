@@ -1,6 +1,6 @@
 import { gql, DocumentNode } from '@apollo/client';
 import { apolloClient as client } from '../lib/apollo-client';
-import { SCAN_ALL_DETAILED } from '../graphql/git-operations';
+import { SCAN_ALL_DETAILED, HIERARCHICAL_COMMIT_AND_PUSH } from '../graphql/git-operations';
 import type { 
   ChangeReviewReport, 
   RepositoryChangeData, 
@@ -586,6 +586,28 @@ export class GraphQLParallelChangeReviewService {
       }))
     };
   }
+
+  /**
+   * Hierarchical commit and push - commits submodules first, then parent, then pushes all
+   */
+  async hierarchicalCommitAndPush(message: string): Promise<any> {
+    try {
+      const input = {
+        message,
+        stageAll: true
+      };
+
+      const { data } = await client.mutate({
+        mutation: HIERARCHICAL_COMMIT_AND_PUSH,
+        variables: { input }
+      });
+
+      return data.hierarchicalCommitAndPush;
+    } catch (error) {
+      console.error('Error with hierarchical commit and push:', error);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance
@@ -644,5 +666,9 @@ export const graphqlParallelChangeReviewService = {
 
   async batchPush(repoPaths: string[]): Promise<any> {
     return service.batchPush(repoPaths);
+  },
+  
+  async hierarchicalCommitAndPush(message: string): Promise<any> {
+    return service.hierarchicalCommitAndPush(message);
   }
 };
