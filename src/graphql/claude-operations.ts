@@ -12,7 +12,7 @@ export const GENERATE_COMMIT_MESSAGES = gql`
 
 // Mutation to generate batch commit messages
 export const GENERATE_BATCH_COMMIT_MESSAGES = gql`
-  mutation GenerateBatchCommitMessages($repositories: [Claude_RepositoryChangesInput!]!) {
+  mutation GenerateBatchCommitMessages($repositories: [RepositoryChangesInput!]!) {
     generateBatchCommitMessages(repositories: $repositories) {
       repository
       message
@@ -23,7 +23,7 @@ export const GENERATE_BATCH_COMMIT_MESSAGES = gql`
 
 // Mutation to generate executive summary
 export const GENERATE_EXECUTIVE_SUMMARY = gql`
-  mutation GenerateExecutiveSummary($repositories: [Claude_RepositorySummaryInput!]!) {
+  mutation GenerateExecutiveSummary($repositories: [RepositorySummaryInput!]!) {
     generateExecutiveSummary(repositories: $repositories) {
       summary
       highlights
@@ -90,7 +90,7 @@ export const RETRY_BATCH_AGENT_RUNS = gql`
 
 // Mutation to execute Claude command
 export const EXECUTE_CLAUDE_COMMAND = gql`
-  mutation ExecuteCommand($input: Claude_ClaudeExecuteInput!) {
+  mutation ExecuteCommand($input: ClaudeExecuteInput!) {
     executeCommand(input: $input) {
       sessionId
       success
