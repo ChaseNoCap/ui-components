@@ -5,7 +5,6 @@ import {
   RepositoryChangeData 
 } from '../services/changeReviewService';
 import { graphqlChangeReviewService } from '../services/graphqlChangeReviewService';
-import { graphqlParallelChangeReviewService } from '../services/graphqlParallelChangeReviewService';
 import { LoadingModal } from '../components/LoadingStates/LoadingModal';
 import { ErrorMessage } from '../components/ErrorDisplay/ErrorMessage';
 import { Button } from '../components/ui/button';
@@ -22,18 +21,12 @@ import {
   Edit2,
   Send,
   RefreshCw,
-  Upload,
-  Zap,
-  Layers
+  Upload
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
 import { useGitOperationCompletion } from '../hooks/useGitOperationCompletion';
 import { toast } from '../lib/toast';
-// import { Switch } from '../components/ui/switch'; // Unused import
-import { Label } from '../components/ui/label';
 import { settingsService } from '../services/settingsService';
-
-// Always use GraphQL with federation
 
 export const ChangeReviewPage: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
@@ -46,7 +39,6 @@ export const ChangeReviewPage: React.FC = () => {
   const [hasInitialLoad, setHasInitialLoad] = useState(false);
   const [showSubmoduleChanges, setShowSubmoduleChanges] = useState<Map<string, boolean>>(new Map());
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [apiMode, setApiMode] = useState<'graphql' | 'graphql-parallel'>('graphql');
   const [logEntries, setLogEntries] = useState<Array<{
     timestamp: Date;
     message: string;
@@ -58,10 +50,8 @@ export const ChangeReviewPage: React.FC = () => {
   const [autoCloseEnabled, setAutoCloseEnabled] = useState(modalSettings.autoClose);
   const [autoCloseDelay] = useState(modalSettings.autoCloseDelay);
 
-  // Select the appropriate GraphQL service
-  const reviewService = 
-    apiMode === 'graphql-parallel' ? graphqlParallelChangeReviewService :
-    graphqlChangeReviewService;
+  // Use the GraphQL service
+  const reviewService = graphqlChangeReviewService;
 
   // Create a ref to store the startReview function
   const startReviewRef = React.useRef<() => Promise<void>>();
@@ -111,10 +101,9 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
-      // Show success toast for GraphQL modes
+      // Show success toast
       // The modal will handle closing based on auto-close settings
-      const modeText = apiMode === 'graphql-parallel' ? ' using parallel GraphQL!' : ' using GraphQL!';
-      toast.success(`Change review completed successfully${modeText}`);
+      toast.success('Change review completed successfully!');
       
       // Clear scanning state on success
       setIsScanning(false);
@@ -128,11 +117,8 @@ export const ChangeReviewPage: React.FC = () => {
       setIsRefreshing(false);
       // Reset the review state in case of error to allow retry
       graphqlChangeReviewService.resetReviewState();
-      if (apiMode === 'graphql-parallel') {
-        graphqlParallelChangeReviewService.resetReviewState();
-      }
     }
-  }, [reviewService, apiMode]);
+  }, [reviewService]);
 
   // Update the ref whenever startReview changes
   React.useEffect(() => {
@@ -409,49 +395,17 @@ export const ChangeReviewPage: React.FC = () => {
               Comprehensive analysis of all uncommitted changes across repositories
             </p>
           </div>
-          <div className="flex items-center gap-4">
-            {/* GraphQL Mode Selector */}
-            <div className="flex items-center gap-2">
-              <Label className="text-sm">GraphQL Mode:</Label>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant={apiMode === 'graphql' ? 'default' : 'outline'}
-                  onClick={() => {
-                    setApiMode('graphql');
-                    toast.info('Switched to Sequential GraphQL');
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <Layers className="h-3 w-3" />
-                  Sequential
-                </Button>
-                <Button
-                  size="sm"
-                  variant={apiMode === 'graphql-parallel' ? 'default' : 'outline'}
-                  onClick={() => {
-                    setApiMode('graphql-parallel');
-                    toast.info('Switched to Parallel GraphQL');
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <Zap className="h-3 w-3" />
-                  Parallel
-                </Button>
-              </div>
-            </div>
-            {report && (
-              <Button 
-                onClick={startReview} 
-                disabled={isScanning || isRefreshing}
-                variant="outline"
-                size="sm"
-              >
-                <RefreshCw className={`mr-2 h-4 w-4 ${(isScanning || isRefreshing) ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            )}
-          </div>
+          {report && (
+            <Button 
+              onClick={startReview} 
+              disabled={isScanning || isRefreshing}
+              variant="outline"
+              size="sm"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${(isScanning || isRefreshing) ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          )}
         </div>
       </div>
 

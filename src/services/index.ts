@@ -10,7 +10,6 @@ export * from './apolloClient';
 
 // GraphQL-specific exports
 export * from './graphqlChangeReviewService';
-export * from './graphqlParallelChangeReviewService';
 // Also export the GraphQL version of changeReviewService with explicit name
 export { changeReviewServiceGraphQL } from './changeReviewServiceGraphQL';
 
