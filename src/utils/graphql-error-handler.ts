@@ -1,5 +1,5 @@
 import { ApolloError } from '@apollo/client';
-import { toast } from './toast';
+import { toast } from '../lib/toast';
 
 export interface GraphQLErrorDetail {
   type: 'TYPE_MISMATCH' | 'SERVICE_UNAVAILABLE' | 'TIMEOUT' | 'CONNECTION_ERROR' | 'OFFLINE' | 'UNKNOWN';

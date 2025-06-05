@@ -10,7 +10,7 @@ import { GitHubTokenBanner } from './components/TokenValidation';
 import { Navigation } from './components/Navigation';
 import { TokenValidationProvider, useTokenValidation } from './contexts';
 import { ThemeProvider } from './context';
-import { ToastProvider } from './components/Toast';
+import { ToastProvider, ToastConnector } from './components/Toast';
 import { GraphQLProvider } from './providers/GraphQLProvider';
 import Config from './pages/Config';
 import { GraphQLDebug } from './components/GraphQLDebug';
@@ -78,6 +78,7 @@ export const App: React.FC = () => {
           <GraphQLProvider>
             <TokenValidationProvider>
               <ToastProvider position="bottom-center">
+                <ToastConnector />
                 <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
                   <DashboardContent />
                   <ConditionalDevTools />
