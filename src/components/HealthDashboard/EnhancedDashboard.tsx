@@ -227,8 +227,21 @@ export const EnhancedDashboard: React.FC = () => {
     );
   }
 
-  const health = healthData?.health;
-  if (!health) return null;
+  // Handle the new health data structure
+  const claudeHealth = healthData?.claudeHealth;
+  const repoHealth = healthData?.repoAgentHealth;
+  
+  // If no health data yet, show loading
+  if (!claudeHealth && !repoHealth) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="text-center">
+          <Spinner size="lg" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading health data...</p>
+        </div>
+      </div>
+    );
+  }
 
   const repositories = (githubData?.githubRepositories || []) as Repository[];
   const githubUser = githubData?.githubUser;
@@ -250,16 +263,26 @@ export const EnhancedDashboard: React.FC = () => {
   const services = [
     { 
       name: 'claude-service', 
-      healthy: health.claudeAvailable || false, 
-      version: health.claudeVersion || 'Unknown', 
+      healthy: claudeHealth?.healthy || false, 
+      version: claudeHealth?.version || 'Unknown', 
       responseTime: 45 
     },
-    { name: 'repo-agent-service', healthy: true, version: '1.0.0', responseTime: 32 },
-    { name: 'gateway', healthy: true, version: health.version || '1.0.0', responseTime: 12 }
+    { 
+      name: 'repo-agent-service', 
+      healthy: repoHealth?.status === 'healthy', 
+      version: repoHealth?.version || '1.0.0', 
+      responseTime: 32 
+    },
+    { 
+      name: 'gateway', 
+      healthy: true, 
+      version: '1.0.0', 
+      responseTime: 12 
+    }
   ];
 
   const healthyServices = services.filter((s: ServiceHealth) => s.healthy).length;
-  const overallHealth = health.healthy;
+  const overallHealth = claudeHealth?.healthy && repoHealth?.status === 'healthy';
   
   const getWorkflowStatusIcon = (run: WorkflowRun) => {
     if (run.status === 'in_progress') return <Play className="h-4 w-4 text-blue-500 animate-pulse" />;
@@ -408,7 +431,7 @@ export const EnhancedDashboard: React.FC = () => {
                     Claude Sessions
                   </p>
                   <p className="text-2xl font-bold mt-2">
-                    {health.activeSessions || 0}
+                    {claudeHealth?.activeSessions || 0}
                   </p>
                 </div>
                 <Activity className="h-8 w-8 text-purple-500" />
@@ -505,9 +528,21 @@ export const EnhancedDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {repositories
-                  .filter(r => r.name.includes('gothic') || isMetaGOTHICPackage(r.name))
-                  .map((repo) => (
+                {(() => {
+                  const filteredRepos = repositories.filter(r => r.name.includes('gothic') || isMetaGOTHICPackage(r.name));
+                  const reposToShow = filteredRepos.length > 0 ? filteredRepos : repositories.slice(0, 10); // Show first 10 if no matches
+                  
+                  if (reposToShow.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-gray-500">
+                        <Package className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                        <p>No repositories found</p>
+                        {githubLoading && <p className="text-sm mt-2">Loading repositories...</p>}
+                      </div>
+                    );
+                  }
+                  
+                  return reposToShow.map((repo) => (
                   <div
                     key={repo.id}
                     className={clsx(
@@ -549,7 +584,8 @@ export const EnhancedDashboard: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -677,20 +713,20 @@ export const EnhancedDashboard: React.FC = () => {
               </div>
 
               {/* System Resources */}
-              {health.resources && (
+              {claudeHealth?.resources && (
                 <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
                   <h4 className="font-medium text-gray-900 dark:text-gray-100">System Resources</h4>
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium">CPU Usage</span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {Math.round(health.resources.cpuUsage)}%
+                        {Math.round(claudeHealth.resources.cpuUsage)}%
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                       <div 
                         className="bg-blue-600 h-2.5 rounded-full" 
-                        style={{ width: `${Math.min(health.resources.cpuUsage, 100)}%` }}
+                        style={{ width: `${Math.min(claudeHealth.resources.cpuUsage, 100)}%` }}
                       />
                     </div>
                   </div>
@@ -698,13 +734,13 @@ export const EnhancedDashboard: React.FC = () => {
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium">Memory</span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {Math.round(health.resources.memoryUsage)} MB
+                        {Math.round(claudeHealth.resources.memoryUsage)} MB
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                       <div 
                         className="bg-green-600 h-2.5 rounded-full" 
-                        style={{ width: `${Math.min((health.resources.memoryUsage / 1024) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((claudeHealth.resources.memoryUsage / 1024) * 100, 100)}%` }}
                       />
                     </div>
                   </div>
@@ -737,7 +773,15 @@ function isMetaGOTHICPackage(name: string): boolean {
     'context-aggregator',
     'ui-components',
     'github-graphql-client',
+    'meta-gothic-framework',
+    'event-system',
+    'file-system',
+    'logger',
   ];
   
-  return metaGOTHICPackages.includes(name);
+  // Also check if the name contains these patterns
+  const patterns = ['gothic', 'meta-gothic', 'sdlc', 'claude'];
+  
+  return metaGOTHICPackages.includes(name) || 
+         patterns.some(pattern => name.toLowerCase().includes(pattern));
 }
