@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, GitBranch, Wrench, Moon, Sun, ChevronDown, Settings, BarChart } from 'lucide-react';
+import { Activity, Wrench, Moon, Sun, ChevronDown, Settings } from 'lucide-react';
 import { TokenStatusIndicator } from './TokenValidation';
 import { useTokenValidation } from '../contexts';
 import { useTheme } from '../context';
@@ -36,11 +36,6 @@ export const Navigation: React.FC = () => {
       path: '/',
     },
     {
-      label: 'Pipeline Control',
-      icon: GitBranch,
-      path: '/pipelines',
-    },
-    {
       label: 'Tools',
       icon: Wrench,
       dropdown: [
@@ -57,11 +52,6 @@ export const Navigation: React.FC = () => {
           path: '/tools/repository-status',
         },
       ],
-    },
-    {
-      label: 'Agent Status',
-      icon: BarChart,
-      path: '/agent-status',
     },
     {
       label: 'Config',

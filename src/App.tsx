@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { HealthDashboard } from './components/HealthDashboard';
-import { PipelineControl } from './components/PipelineControl';
 import { ToolsGraphQL } from './pages/ToolsGraphQL';
 import { ChangeReviewPage } from './pages/ChangeReview';
 import { RepositoryStatusPageGraphQL } from './pages/RepositoryStatusGraphQL';
@@ -16,7 +15,6 @@ import { ThemeProvider } from './context';
 import { ToastProvider } from './components/Toast';
 import { GraphQLProvider } from './providers/GraphQLProvider';
 import Config from './pages/Config';
-import AgentStatusGraphQL from './pages/AgentStatusGraphQL';
 import { GraphQLDebug } from './components/GraphQLDebug';
 import './utils/test-graphql'; // Load test utilities
 
@@ -64,12 +62,10 @@ const DashboardContent: React.FC = () => {
       
       <Routes>
         <Route path="/" element={<HealthDashboard />} />
-        <Route path="/pipelines" element={<PipelineControl />} />
         <Route path="/tools" element={<ToolsGraphQL />} />
         <Route path="/tools/change-review" element={<ChangeReviewPage />} />
         <Route path="/tools/repository-status" element={<RepositoryStatusPageGraphQL />} />
         <Route path="/config" element={<Config />} />
-        <Route path="/agent-status" element={<AgentStatusGraphQL />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
       <GraphQLDebug />
