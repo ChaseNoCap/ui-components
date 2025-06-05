@@ -4,25 +4,9 @@ import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
 import { Switch } from '../components/ui/switch';
 import { Button } from '../components/ui/button';
-import { Separator } from '../components/ui/separator';
 import { useToast } from '../components/Toast/useToast';
 import { Loader2, Save, RotateCcw } from 'lucide-react';
 import { settingsService } from '../services/settingsService';
-
-interface ParallelismConfig {
-  concurrentAgents: number;
-  concurrentShells: number;
-  enableParallelGit: boolean;
-  batchSize: number;
-}
-
-interface AutomationConfig {
-  autoCommit: boolean;
-  autoPush: boolean;
-  autoRetry: boolean;
-  maxRetries: number;
-  skipConfirmations: boolean;
-}
 
 interface UIConfig {
   modalAutoClose: boolean;
@@ -31,8 +15,6 @@ interface UIConfig {
 
 interface UserConfig {
   id: string;
-  parallelism: ParallelismConfig;
-  automation: AutomationConfig;
   ui: UIConfig;
   createdAt: string;
   updatedAt: string;
@@ -68,36 +50,25 @@ const Config: React.FC = () => {
       const stored = localStorage.getItem('meta-gothic-user-config');
       if (stored) {
         const parsedConfig = JSON.parse(stored);
-        // Ensure UI settings exist in loaded config
-        if (!parsedConfig.ui) {
-          const modalSettings = settingsService.getModalSettings('graphqlProgress');
-          parsedConfig.ui = {
-            modalAutoClose: modalSettings.autoClose,
-            modalAutoCloseDelay: modalSettings.autoCloseDelay,
-          };
-        }
+        // Migrate from old config format
+        const migratedConfig: UserConfig = {
+          id: parsedConfig.id || 'default',
+          ui: parsedConfig.ui || {
+            modalAutoClose: false,
+            modalAutoCloseDelay: 3000,
+          },
+          createdAt: parsedConfig.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
         // Force auto-close to false (migration from old default)
-        if (parsedConfig.ui.modalAutoClose === true) {
-          parsedConfig.ui.modalAutoClose = false;
+        if (migratedConfig.ui.modalAutoClose === true) {
+          migratedConfig.ui.modalAutoClose = false;
         }
-        setConfig(parsedConfig);
+        setConfig(migratedConfig);
       } else {
         // Default configuration
         const defaultConfig: UserConfig = {
           id: 'default',
-          parallelism: {
-            concurrentAgents: 3,
-            concurrentShells: 5,
-            enableParallelGit: true,
-            batchSize: 5,
-          },
-          automation: {
-            autoCommit: false,
-            autoPush: false,
-            autoRetry: true,
-            maxRetries: 3,
-            skipConfirmations: false,
-          },
           ui: {
             modalAutoClose: false,
             modalAutoCloseDelay: 3000,
@@ -159,28 +130,6 @@ const Config: React.FC = () => {
     setIsDirty(true);
   };
 
-  const updateParallelism = (updates: Partial<ParallelismConfig>) => {
-    if (!config) return;
-    
-    updateConfig({
-      parallelism: {
-        ...config.parallelism,
-        ...updates,
-      },
-    });
-  };
-
-  const updateAutomation = (updates: Partial<AutomationConfig>) => {
-    if (!config) return;
-    
-    updateConfig({
-      automation: {
-        ...config.automation,
-        ...updates,
-      },
-    });
-  };
-
   const updateUI = (updates: Partial<UIConfig>) => {
     if (!config) return;
     
@@ -195,19 +144,6 @@ const Config: React.FC = () => {
   const resetToDefaults = () => {
     const defaultConfig: UserConfig = {
       id: 'default',
-      parallelism: {
-        concurrentAgents: 3,
-        concurrentShells: 5,
-        enableParallelGit: true,
-        batchSize: 5,
-      },
-      automation: {
-        autoCommit: false,
-        autoPush: false,
-        autoRetry: true,
-        maxRetries: 3,
-        skipConfirmations: false,
-      },
       ui: {
         modalAutoClose: false,
         modalAutoCloseDelay: 3000,
@@ -266,202 +202,6 @@ const Config: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        {/* Parallelism Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Parallelism Settings</CardTitle>
-            <CardDescription>
-              Configure concurrent execution limits for optimal performance
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="concurrent-agents">
-                  Concurrent Claude Agents (1-10)
-                </Label>
-                <Input
-                  id="concurrent-agents"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={config.parallelism.concurrentAgents}
-                  onChange={(e) => {
-                    const value = Math.min(10, Math.max(1, parseInt(e.target.value) || 1));
-                    updateParallelism({ concurrentAgents: value });
-                  }}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Number of Claude agents that can run simultaneously
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="concurrent-shells">
-                  Concurrent Shell Processes (1-20)
-                </Label>
-                <Input
-                  id="concurrent-shells"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={config.parallelism.concurrentShells}
-                  onChange={(e) => {
-                    const value = Math.min(20, Math.max(1, parseInt(e.target.value) || 1));
-                    updateParallelism({ concurrentShells: value });
-                  }}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Number of shell processes that can run simultaneously
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="enable-parallel-git">Enable Parallel Git Operations</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Execute git commands across multiple repositories simultaneously
-                  </p>
-                </div>
-                <Switch
-                  id="enable-parallel-git"
-                  checked={config.parallelism.enableParallelGit}
-                  onCheckedChange={(checked) => 
-                    updateParallelism({ enableParallelGit: checked })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="batch-size">
-                  Batch Size (1-20)
-                </Label>
-                <Input
-                  id="batch-size"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={config.parallelism.batchSize}
-                  onChange={(e) => {
-                    const value = Math.min(20, Math.max(1, parseInt(e.target.value) || 1));
-                    updateParallelism({ batchSize: value });
-                  }}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Number of repositories to process in each batch
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Automation Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Automation Settings</CardTitle>
-            <CardDescription>
-              Control automatic behaviors and confirmations
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="auto-commit">Auto-commit Changes</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically commit changes after successful operations
-                  </p>
-                </div>
-                <Switch
-                  id="auto-commit"
-                  checked={config.automation.autoCommit}
-                  onCheckedChange={(checked) => 
-                    updateAutomation({ autoCommit: checked })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="auto-push">Auto-push Commits</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically push commits to remote repository
-                  </p>
-                </div>
-                <Switch
-                  id="auto-push"
-                  checked={config.automation.autoPush}
-                  onCheckedChange={(checked) => 
-                    updateAutomation({ autoPush: checked })
-                  }
-                  disabled={!config.automation.autoCommit}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="auto-retry">Auto-retry Failed Operations</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically retry operations that fail
-                  </p>
-                </div>
-                <Switch
-                  id="auto-retry"
-                  checked={config.automation.autoRetry}
-                  onCheckedChange={(checked) => 
-                    updateAutomation({ autoRetry: checked })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="max-retries">
-                  Maximum Retries (0-10)
-                </Label>
-                <Input
-                  id="max-retries"
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={config.automation.maxRetries}
-                  onChange={(e) => {
-                    const value = Math.min(10, Math.max(0, parseInt(e.target.value) || 0));
-                    updateAutomation({ maxRetries: value });
-                  }}
-                  disabled={!config.automation.autoRetry}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Number of times to retry failed operations
-                </p>
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="skip-confirmations">Skip Confirmations</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Skip confirmation dialogs for automated operations
-                  </p>
-                </div>
-                <Switch
-                  id="skip-confirmations"
-                  checked={config.automation.skipConfirmations}
-                  onCheckedChange={(checked) => 
-                    updateAutomation({ skipConfirmations: checked })
-                  }
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* UI Settings */}
         <Card>
           <CardHeader>

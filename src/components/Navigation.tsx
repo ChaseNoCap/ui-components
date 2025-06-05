@@ -47,10 +47,6 @@ export const Navigation: React.FC = () => {
           label: 'Claude Console',
           path: '/claude-console',
         },
-        {
-          label: 'Repository Status',
-          path: '/tools/repository-status',
-        },
       ],
     },
     {

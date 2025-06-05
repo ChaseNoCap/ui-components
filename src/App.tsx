@@ -5,7 +5,6 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { HealthDashboard } from './components/HealthDashboard';
 import { ToolsGraphQL } from './pages/ToolsGraphQL';
 import { ChangeReviewPage } from './pages/ChangeReview';
-import { RepositoryStatusPageGraphQL } from './pages/RepositoryStatusGraphQL';
 import { GitHubErrorBoundary } from './components/ErrorBoundary';
 import { ClaudeConsoleStandalone } from './pages/ClaudeConsoleStandalone';
 import { GitHubTokenBanner } from './components/TokenValidation';
@@ -63,7 +62,6 @@ const DashboardContent: React.FC = () => {
         <Route path="/" element={<HealthDashboard />} />
         <Route path="/tools" element={<ToolsGraphQL />} />
         <Route path="/tools/change-review" element={<ChangeReviewPage />} />
-        <Route path="/tools/repository-status" element={<RepositoryStatusPageGraphQL />} />
         <Route path="/config" element={<Config />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
       </Routes>
