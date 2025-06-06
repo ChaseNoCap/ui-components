@@ -9,6 +9,8 @@ export interface FileChange {
 export interface BranchInfo {
   current: string;
   tracking: string;
+  ahead?: number;
+  behind?: number;
 }
 
 export interface RecentCommit {
@@ -24,6 +26,7 @@ export interface RepositoryChangeData {
   branch: BranchInfo;
   changes: FileChange[];
   hasChanges: boolean;
+  needsPush?: boolean;
   recentCommits: RecentCommit[];
   gitDiff: {
     staged: string;

@@ -271,10 +271,13 @@ export class GraphQLChangeReviewService {
           path: path,
           branch: {
             current: status.branch,
-            tracking: ''
+            tracking: '',
+            ahead: status.ahead || 0,
+            behind: status.behind || 0
           },
           changes: regularChanges,
           hasChanges: status.isDirty,
+          needsPush: status.ahead > 0, // Repository has unpushed commits
           recentCommits: recentCommits.map((commit: any) => ({
             hash: commit.hash,
             message: commit.message,

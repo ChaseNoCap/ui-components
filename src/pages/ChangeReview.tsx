@@ -65,14 +65,7 @@ export const ChangeReviewPage: React.FC = () => {
     getLatestCommitHash,
     progress: operationProgress
   } = useGitOperationManager({
-    showToasts: false, // We'll handle toasts ourselves
-    onOperationComplete: () => {
-      // Refresh the review when all operations complete
-      if (startReviewRef.current && operationProgress.completed === operationProgress.total) {
-        startReviewRef.current();
-        setIsRefreshing(false);
-      }
-    }
+    showToasts: false // We'll handle toasts ourselves
   });
 
   // Start comprehensive review
@@ -335,99 +328,182 @@ export const ChangeReviewPage: React.FC = () => {
     async function commitAllSequentially(push: boolean) {
       console.log('[ChangeReview] Starting sequential commit process');
       
-      // Get current commit hashes before committing
-      const repoHashes = await Promise.all(
-        reposToCommit.map(async repo => ({
-          repo,
-          previousHash: await getLatestCommitHash(repo.path)
-        }))
-      );
-      
-      console.log('[ChangeReview] Captured commit hashes:', repoHashes.map(rh => ({
-        repo: rh.repo.name,
-        hash: rh.previousHash
-      })));
-      
-      // PHASE 1: Commit all repositories sequentially
-      const commitOperations = [];
-      for (const { repo, previousHash } of repoHashes) {
-        const commitOp = createCommitOperation(
-          `commit-${repo.name}`,
-          repo.name,
-          () => {
-            console.log(`[ChangeReview] Executing commit for ${repo.name}`);
-            return reviewService.commitRepository(repo.path, repo.generatedCommitMessage!);
-          },
-          previousHash
+      try {
+        // Get current commit hashes before committing
+        const repoHashes = await Promise.all(
+          reposToCommit.map(async repo => ({
+            repo,
+            previousHash: await getLatestCommitHash(repo.path)
+          }))
         );
-        commitOperations.push(commitOp);
-      }
-      
-      console.log(`[ChangeReview] Executing ${commitOperations.length} commit operations sequentially`);
-      const commitResults = await executeOperations(commitOperations);
-      
-      // Check commit results
-      const successfulCommits = commitResults.filter(r => r.success);
-      const failedCommits = commitResults.filter(r => !r.success);
-      
-      console.log(`[ChangeReview] Commit results: ${successfulCommits.length} successful, ${failedCommits.length} failed`);
-      
-      if (failedCommits.length > 0) {
-        // Log details of failed commits
-        failedCommits.forEach(result => {
-          console.error(`[ChangeReview] Commit failed for ${result.id}:`, result.error);
-        });
         
-        toast.error(`${failedCommits.length} repositories failed to commit. Check console for details.`);
+        console.log('[ChangeReview] Captured commit hashes:', repoHashes.map(rh => ({
+          repo: rh.repo.name,
+          hash: rh.previousHash
+        })));
         
-        // Don't proceed to push if any commits failed
-        if (push) {
-          toast.warning('Skipping push due to commit failures');
-        }
-        return;
-      }
-      
-      toast.success(`All ${successfulCommits.length} repositories committed successfully`);
-      
-      // PHASE 2: Push all repositories sequentially (only if all commits succeeded)
-      if (push) {
-        console.log('[ChangeReview] All commits successful, proceeding with push phase');
-        
-        const pushOperations = [];
-        for (const { repo } of repoHashes) {
-          const pushOp = createPushOperation(
-            `push-${repo.name}`,
+        // PHASE 1: Commit all repositories sequentially
+        const commitOperations = [];
+        for (const { repo, previousHash } of repoHashes) {
+          const commitOp = createCommitOperation(
+            `commit-${repo.name}`,
             repo.name,
             () => {
-              console.log(`[ChangeReview] Executing push for ${repo.name}`);
-              return reviewService.pushRepository(repo.path);
-            }
+              console.log(`[ChangeReview] Executing commit for ${repo.name}`);
+              return reviewService.commitRepository(repo.path, repo.generatedCommitMessage!);
+            },
+            previousHash
           );
-          pushOperations.push(pushOp);
+          commitOperations.push(commitOp);
         }
         
-        console.log(`[ChangeReview] Executing ${pushOperations.length} push operations sequentially`);
-        const pushResults = await executeOperations(pushOperations);
+        console.log(`[ChangeReview] Executing ${commitOperations.length} commit operations sequentially`);
+        const commitResults = await executeOperations(commitOperations);
         
-        // Check push results
-        const successfulPushes = pushResults.filter(r => r.success);
-        const failedPushes = pushResults.filter(r => !r.success);
+        // Check commit results
+        const successfulCommits = commitResults.filter(r => r.success);
+        const failedCommits = commitResults.filter(r => !r.success);
         
-        console.log(`[ChangeReview] Push results: ${successfulPushes.length} successful, ${failedPushes.length} failed`);
+        console.log(`[ChangeReview] Commit results: ${successfulCommits.length} successful, ${failedCommits.length} failed`);
         
-        if (failedPushes.length > 0) {
-          // Log details of failed pushes
-          failedPushes.forEach(result => {
-            console.error(`[ChangeReview] Push failed for ${result.id}:`, result.error);
+        if (failedCommits.length > 0) {
+          // Log details of failed commits
+          failedCommits.forEach(result => {
+            console.error(`[ChangeReview] Commit failed for ${result.id}:`, result.error);
           });
           
-          toast.warning(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
-        } else {
-          toast.success(`All ${successfulPushes.length} repositories pushed successfully`);
+          toast.error(`${failedCommits.length} repositories failed to commit. Check console for details.`);
+          
+          // Don't proceed to push if any commits failed
+          if (push) {
+            toast.warning('Skipping push due to commit failures');
+          }
+          return;
         }
+        
+        toast.success(`All ${successfulCommits.length} repositories committed successfully`);
+        
+        // PHASE 2: Push ALL repositories (not just the ones we committed)
+        if (push) {
+          console.log('[ChangeReview] All commits successful, proceeding with push phase');
+          
+          // Get ALL repositories from the report to check if any need pushing
+          const allRepos = report?.repositories || [];
+          const pushOperations = [];
+          
+          // Create push operations for all repos
+          for (const repo of allRepos) {
+            const pushOp = createPushOperation(
+              `push-${repo.name}`,
+              repo.name,
+              () => {
+                console.log(`[ChangeReview] Executing push for ${repo.name}`);
+                return reviewService.pushRepository(repo.path);
+              }
+            );
+            pushOperations.push(pushOp);
+          }
+          
+          console.log(`[ChangeReview] Executing ${pushOperations.length} push operations sequentially`);
+          const pushResults = await executeOperations(pushOperations);
+          
+          // Check push results
+          const successfulPushes = pushResults.filter(r => r.success);
+          const failedPushes = pushResults.filter(r => !r.success);
+          
+          console.log(`[ChangeReview] Push results: ${successfulPushes.length} successful, ${failedPushes.length} failed`);
+          
+          if (failedPushes.length > 0) {
+            // Log details of failed pushes
+            failedPushes.forEach(result => {
+              console.error(`[ChangeReview] Push failed for ${result.id}:`, result.error);
+            });
+            
+            toast.warning(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
+          } else {
+            toast.success(`All ${successfulPushes.length} repositories pushed successfully`);
+          }
+        }
+      } finally {
+        // Always refresh after operations complete
+        console.log('[ChangeReview] Operations complete, refreshing data...');
+        setIsRefreshing(true);
+        
+        // Wait a moment for git operations to settle
+        setTimeout(() => {
+          if (startReviewRef.current) {
+            startReviewRef.current();
+          }
+        }, 1000);
       }
     }
   }, [report, reviewService, getLatestCommitHash, createCommitOperation, createPushOperation, executeOperations]);
+
+  // Push all repositories that are ahead
+  const pushAll = useCallback(async () => {
+    if (!report) return;
+    
+    const reposToPush = report.repositories.filter(r => r.branch?.ahead > 0);
+    
+    if (reposToPush.length === 0) {
+      toast.info('No repositories need pushing');
+      return;
+    }
+    
+    // Set refreshing state
+    setIsRefreshing(true);
+    
+    try {
+      console.log('[ChangeReview] Starting push all process');
+      
+      // Create push operations for all repos that are ahead
+      const pushOperations = [];
+      for (const repo of reposToPush) {
+        const pushOp = createPushOperation(
+          `push-${repo.name}`,
+          repo.name,
+          () => {
+            console.log(`[ChangeReview] Executing push for ${repo.name}`);
+            return reviewService.pushRepository(repo.path);
+          }
+        );
+        pushOperations.push(pushOp);
+      }
+      
+      console.log(`[ChangeReview] Executing ${pushOperations.length} push operations sequentially`);
+      const pushResults = await executeOperations(pushOperations);
+      
+      // Check push results
+      const successfulPushes = pushResults.filter(r => r.success);
+      const failedPushes = pushResults.filter(r => !r.success);
+      
+      console.log(`[ChangeReview] Push results: ${successfulPushes.length} successful, ${failedPushes.length} failed`);
+      
+      if (failedPushes.length > 0) {
+        // Log details of failed pushes
+        failedPushes.forEach(result => {
+          console.error(`[ChangeReview] Push failed for ${result.id}:`, result.error);
+        });
+        
+        toast.warning(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
+      } else {
+        toast.success(`All ${successfulPushes.length} repositories pushed successfully`);
+      }
+    } catch (err) {
+      toast.error(`Push operation failed: ${err}`);
+    } finally {
+      // Always refresh after operations complete
+      console.log('[ChangeReview] Push operations complete, refreshing data...');
+      setIsRefreshing(true);
+      
+      // Wait a moment for git operations to settle
+      setTimeout(() => {
+        if (startReviewRef.current) {
+          startReviewRef.current();
+        }
+      }, 1000);
+    }
+  }, [report, reviewService, createPushOperation, executeOperations]);
 
   // Load data on mount - use empty dependency array to ensure it only runs once
   useEffect(() => {
@@ -511,7 +587,9 @@ export const ChangeReviewPage: React.FC = () => {
       {isWaiting && !isRefreshing && (
         <div className="fixed top-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
           <RefreshCw className="h-4 w-4 animate-spin" />
-          Verifying git operations...
+          {operationProgress.total > 0 
+            ? `Git operations: ${operationProgress.completed}/${operationProgress.total}`
+            : 'Processing git operations...'}
         </div>
       )}
 
@@ -623,36 +701,46 @@ export const ChangeReviewPage: React.FC = () => {
           </Card>
 
           {/* Batch Actions */}
-          {report.repositories.some(r => r.hasChanges) && (
+          {(report.repositories.some(r => r.hasChanges) || report.repositories.some(r => r.branch?.ahead > 0)) && (
             <Card className="mb-6">
               <CardContent className="pt-6">
                 <div className="flex gap-4">
-                  <Button onClick={() => commitAll(false)} variant="default">
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Commit All
-                  </Button>
-                  <Button onClick={() => commitAll(true)} variant="default">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Commit All & Push
-                  </Button>
+                  {report.repositories.some(r => r.hasChanges) && (
+                    <>
+                      <Button onClick={() => commitAll(false)} variant="default">
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Commit All
+                      </Button>
+                      <Button onClick={() => commitAll(true)} variant="default">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Commit All & Push
+                      </Button>
+                    </>
+                  )}
+                  {!report.repositories.some(r => r.hasChanges) && report.repositories.some(r => r.branch?.ahead > 0) && (
+                    <Button onClick={() => pushAll()} variant="default">
+                      <Upload className="mr-2 h-4 w-4" />
+                      Push All
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Repository Cards - only show repos with changes */}
+          {/* Repository Cards - show repos with changes or that need pushing */}
           <div className="space-y-4">
-            {report.repositories.filter(repo => repo.hasChanges || repo.error).length === 0 ? (
+            {report.repositories.filter(repo => repo.hasChanges || repo.error || repo.branch?.ahead > 0).length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">All repositories are clean!</h3>
-                  <p className="text-gray-600">No uncommitted changes found across any repositories.</p>
+                  <h3 className="text-lg font-semibold mb-2">All repositories are up to date!</h3>
+                  <p className="text-gray-600">No uncommitted changes or unpushed commits found.</p>
                 </CardContent>
               </Card>
             ) : (
               report.repositories
-                .filter(repo => repo.hasChanges || repo.error)
+                .filter(repo => repo.hasChanges || repo.error || repo.branch?.ahead > 0)
                 .map(repo => (
               <Card key={repo.name} className={repo.hasChanges ? '' : 'opacity-60'}>
                 <CardHeader 
@@ -678,6 +766,12 @@ export const ChangeReviewPage: React.FC = () => {
                       <span className="text-sm text-gray-600">
                         {repo.branch?.current || 'unknown'}
                       </span>
+                      {repo.branch?.ahead > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          <Upload className="h-3 w-3 mr-1" />
+                          {repo.branch.ahead} ahead
+                        </Badge>
+                      )}
                       {repo.error && (
                         <AlertCircle className="h-4 w-4 text-red-500" />
                       )}
