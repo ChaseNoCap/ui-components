@@ -38,11 +38,6 @@ class SettingsService {
       const stored = localStorage.getItem(SettingsService.STORAGE_KEY);
       if (stored) {
         const settings = JSON.parse(stored);
-        // Force auto-close to false if it was previously true (one-time migration)
-        if (settings.modalSettings?.graphqlProgress?.autoClose === true) {
-          settings.modalSettings.graphqlProgress.autoClose = false;
-          this.saveSettings(settings);
-        }
         // Merge with defaults to ensure all properties exist
         return this.mergeSettings(DEFAULT_SETTINGS, settings);
       }
@@ -81,7 +76,11 @@ class SettingsService {
       ...saved,
       modalSettings: {
         ...defaults.modalSettings,
-        ...saved.modalSettings
+        ...saved.modalSettings,
+        graphqlProgress: {
+          ...defaults.modalSettings.graphqlProgress,
+          ...(saved.modalSettings?.graphqlProgress || {})
+        }
       },
       debugOptions: {
         ...defaults.debugOptions,

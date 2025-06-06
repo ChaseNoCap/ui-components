@@ -71,18 +71,21 @@ const Config: React.FC = () => {
           createdAt: parsedConfig.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        // Force auto-close to false (migration from old default)
-        if (migratedConfig.ui.modalAutoClose === true) {
-          migratedConfig.ui.modalAutoClose = false;
-        }
         setConfig(migratedConfig);
+        
+        // Sync with settings service on load
+        settingsService.updateModalSettings('graphqlProgress', {
+          autoClose: migratedConfig.ui.modalAutoClose,
+          autoCloseDelay: migratedConfig.ui.modalAutoCloseDelay,
+        });
       } else {
-        // Default configuration
+        // Load from settings service as fallback
+        const modalSettings = settingsService.getModalSettings('graphqlProgress');
         const defaultConfig: UserConfig = {
           id: 'default',
           ui: {
-            modalAutoClose: false,
-            modalAutoCloseDelay: 3000,
+            modalAutoClose: modalSettings.autoClose,
+            modalAutoCloseDelay: modalSettings.autoCloseDelay,
           },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
