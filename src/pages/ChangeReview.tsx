@@ -316,7 +316,8 @@ export const ChangeReviewPage: React.FC = () => {
               console.log(`[ChangeReview] Executing commit for ${repo.name}`);
               return reviewService.commitRepository(repo.path, repo.generatedCommitMessage!);
             },
-            previousHash
+            previousHash,
+            repo.path  // Pass the full path for verification
           );
           commitOperations.push(commitOp);
         }
@@ -363,7 +364,8 @@ export const ChangeReviewPage: React.FC = () => {
               () => {
                 console.log(`[ChangeReview] Executing push for ${repo.name}`);
                 return reviewService.pushRepository(repo.path);
-              }
+              },
+              repo.path  // Pass the full path
             );
             pushOperations.push(pushOp);
           }
@@ -428,7 +430,8 @@ export const ChangeReviewPage: React.FC = () => {
           () => {
             console.log(`[ChangeReview] Executing push for ${repo.name}`);
             return reviewService.pushRepository(repo.path);
-          }
+          },
+          repo.path  // Pass the full path
         );
         pushOperations.push(pushOp);
       }

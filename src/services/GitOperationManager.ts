@@ -315,7 +315,8 @@ export class GitOperationManager {
     id: string,
     repository: string,
     commitFn: () => Promise<any>,
-    previousHash?: string | null
+    previousHash?: string | null,
+    repositoryPath?: string
   ): GitOperation {
     return {
       id,
@@ -323,7 +324,7 @@ export class GitOperationManager {
       repository,
       execute: commitFn,
       verify: previousHash !== undefined 
-        ? this.createCommitVerification(repository, previousHash)
+        ? this.createCommitVerification(repositoryPath || repository, previousHash)
         : undefined,
       retryable: true,
       maxRetries: 3
@@ -336,14 +337,15 @@ export class GitOperationManager {
   createPushOperation(
     id: string,
     repository: string,
-    pushFn: () => Promise<any>
+    pushFn: () => Promise<any>,
+    repositoryPath?: string
   ): GitOperation {
     return {
       id,
       type: 'push',
       repository,
       execute: pushFn,
-      verify: this.createPushVerification(repository),
+      verify: this.createPushVerification(repositoryPath || repository),
       retryable: true,
       maxRetries: 2
     };

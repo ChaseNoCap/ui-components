@@ -83,18 +83,20 @@ export function useGitOperationManager(options: UseGitOperationManagerOptions = 
     id: string,
     repository: string,
     commitFn: () => Promise<any>,
-    previousHash?: string | null
+    previousHash?: string | null,
+    repositoryPath?: string
   ) => {
-    return getManager().createCommitOperation(id, repository, commitFn, previousHash);
+    return getManager().createCommitOperation(id, repository, commitFn, previousHash, repositoryPath);
   }, [getManager]);
 
   // Create push operation  
   const createPushOperation = useCallback((
     id: string,
     repository: string,
-    pushFn: () => Promise<any>
+    pushFn: () => Promise<any>,
+    repositoryPath?: string
   ) => {
-    return getManager().createPushOperation(id, repository, pushFn);
+    return getManager().createPushOperation(id, repository, pushFn, repositoryPath);
   }, [getManager]);
 
   // Get latest commit hash
