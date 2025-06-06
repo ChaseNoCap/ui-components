@@ -110,6 +110,9 @@ export const ChangeReviewPage: React.FC = () => {
       
       // Don't clear scanning state here - let the modal handle it
       // The modal's onClose will clear these states
+      
+      // Clear refreshing state after successful review
+      setIsRefreshing(false);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
@@ -215,24 +218,24 @@ export const ChangeReviewPage: React.FC = () => {
       // Check results
       const commitResult = results[0];
       if (commitResult && commitResult.success) {
-        toast.success(`Successfully committed changes for ${repo.name}`);
+        console.log(`Successfully committed changes for ${repo.name}`);
         
         if (shouldPush && results[1]) {
           if (results[1].success) {
             const pushData = results[1].result;
-            toast.success(`Successfully pushed ${repo.name} to origin/${pushData.branch}`);
+            console.log(`Successfully pushed ${repo.name} to origin/${pushData.branch}`);
           } else {
-            toast.error(`Failed to push ${repo.name}: ${results[1].error?.message || 'Unknown error'}`);
+            console.error(`Failed to push ${repo.name}: ${results[1].error?.message || 'Unknown error'}`);
           }
         }
         
         return true;
       } else {
-        toast.error(`Failed to commit ${repo.name}: ${commitResult?.error?.message || 'Unknown error'}`);
+        console.error(`Failed to commit ${repo.name}: ${commitResult?.error?.message || 'Unknown error'}`);
         return false;
       }
     } catch (err) {
-      toast.error(`Failed to commit ${repo.name}: ${err}`);
+      console.error(`Failed to commit ${repo.name}: ${err}`);
       return false;
     } finally {
       setCommittingRepos(prev => {
@@ -359,7 +362,7 @@ export const ChangeReviewPage: React.FC = () => {
           return;
         }
         
-        toast.success(`All ${successfulCommits.length} repositories committed successfully`);
+        console.log(`All ${successfulCommits.length} repositories committed successfully`);
         
         // PHASE 2: Push ALL repositories (not just the ones we committed)
         if (push) {
@@ -407,7 +410,6 @@ export const ChangeReviewPage: React.FC = () => {
       } finally {
         // Always refresh after operations complete
         console.log('[ChangeReview] Operations complete, refreshing data...');
-        setIsRefreshing(true);
         
         // Wait a moment for git operations to settle
         setTimeout(() => {
@@ -423,7 +425,7 @@ export const ChangeReviewPage: React.FC = () => {
   const pushAll = useCallback(async () => {
     if (!report) return;
     
-    const reposToPush = report.repositories.filter(r => r.branch?.ahead > 0);
+    const reposToPush = report.repositories.filter(r => r.branch?.ahead && r.branch.ahead > 0);
     
     if (reposToPush.length === 0) {
       setError('No repositories need pushing');
@@ -465,16 +467,15 @@ export const ChangeReviewPage: React.FC = () => {
           console.error(`[ChangeReview] Push failed for ${result.id}:`, result.error);
         });
         
-        toast.warning(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
+        console.warn(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
       } else {
-        toast.success(`All ${successfulPushes.length} repositories pushed successfully`);
+        console.log(`All ${successfulPushes.length} repositories pushed successfully`);
       }
     } catch (err) {
       console.error(`Push operation failed: ${err}`);
     } finally {
       // Always refresh after operations complete
       console.log('[ChangeReview] Push operations complete, refreshing data...');
-      setIsRefreshing(true);
       
       // Wait a moment for git operations to settle
       setTimeout(() => {
@@ -554,15 +555,6 @@ export const ChangeReviewPage: React.FC = () => {
           </CardContent>
         </Card>
       )}
-
-      {/* Status Indicators */}
-      {isRefreshing && (
-        <div className="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          Refreshing data...
-        </div>
-      )}
-      
       {(isWaiting || committingRepos.size > 0) && !isRefreshing && (
         <div className="fixed top-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
           <RefreshCw className="h-4 w-4 animate-spin" />
@@ -683,7 +675,7 @@ export const ChangeReviewPage: React.FC = () => {
           </Card>
 
           {/* Batch Actions */}
-          {(report.repositories.some(r => r.hasChanges) || report.repositories.some(r => r.branch?.ahead > 0)) && (
+          {(report.repositories.some(r => r.hasChanges) || report.repositories.some(r => r.branch?.ahead && r.branch.ahead > 0)) && (
             <Card className="mb-6">
               <CardContent className="pt-6">
                 <div className="flex gap-4">
@@ -699,7 +691,7 @@ export const ChangeReviewPage: React.FC = () => {
                       </Button>
                     </>
                   )}
-                  {!report.repositories.some(r => r.hasChanges) && report.repositories.some(r => r.branch?.ahead > 0) && (
+                  {!report.repositories.some(r => r.hasChanges) && report.repositories.some(r => r.branch?.ahead && r.branch.ahead > 0) && (
                     <Button onClick={() => pushAll()} variant="default">
                       <Upload className="mr-2 h-4 w-4" />
                       Push All
@@ -712,7 +704,7 @@ export const ChangeReviewPage: React.FC = () => {
 
           {/* Repository Cards - show repos with changes or that need pushing */}
           <div className="space-y-4">
-            {report.repositories.filter(repo => repo.hasChanges || repo.error || repo.branch?.ahead > 0).length === 0 ? (
+            {report.repositories.filter(repo => repo.hasChanges || repo.error || (repo.branch?.ahead && repo.branch.ahead > 0)).length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
@@ -722,7 +714,7 @@ export const ChangeReviewPage: React.FC = () => {
               </Card>
             ) : (
               report.repositories
-                .filter(repo => repo.hasChanges || repo.error || repo.branch?.ahead > 0)
+                .filter(repo => repo.hasChanges || repo.error || (repo.branch?.ahead && repo.branch.ahead > 0))
                 .map(repo => (
               <Card key={repo.name} className={repo.hasChanges ? '' : 'opacity-60'}>
                 <CardHeader 
@@ -748,7 +740,7 @@ export const ChangeReviewPage: React.FC = () => {
                       <span className="text-sm text-gray-600">
                         {repo.branch?.current || 'unknown'}
                       </span>
-                      {repo.branch?.ahead > 0 && (
+                      {repo.branch?.ahead && repo.branch.ahead > 0 && (
                         <Badge variant="outline" className="text-xs">
                           <Upload className="h-3 w-3 mr-1" />
                           {repo.branch.ahead} ahead
