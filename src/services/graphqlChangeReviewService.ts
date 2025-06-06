@@ -838,6 +838,7 @@ export class GraphQLChangeReviewService {
         this.log(`📦 Processed ${changedRepoCount} repositories with ${repositories.reduce((sum, r) => sum + (r.statistics?.totalFiles || 0), 0)} total file changes`, 'info');
       }
       
+      // Mark as complete only after everything is done
       onProgress?.({
         stage: 'complete',
         message: changedRepoCount === 0 ? 'All repositories are clean!' : 'Comprehensive review completed successfully!'

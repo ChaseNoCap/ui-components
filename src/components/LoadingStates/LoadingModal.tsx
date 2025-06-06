@@ -74,27 +74,33 @@ export const LoadingModal: React.FC<LoadingModalProps> = ({
   const isComplete = useProgressLog ? 
     logEntries.some(e => e.type === 'success' && e.message.includes('complete')) :
     allComplete;
+  
+  // Check if commit message generation is complete (for BatchCommitMessageResult)
+  const isGeneratingComplete = stages.find(s => s.id === 'generating')?.status === 'success';
 
   // Handle auto-close logic
   useEffect(() => {
-    if (isComplete && autoCloseEnabled && !hasError && onClose) {
-      // Start countdown
-      setCountdown(Math.ceil(autoCloseDelay / 1000));
-      
-      // Update countdown every second
-      countdownRef.current = setInterval(() => {
-        setCountdown(prev => {
-          if (prev === null || prev <= 1) {
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      
-      // Auto close after delay
-      timeoutRef.current = setTimeout(() => {
-        onClose();
-      }, autoCloseDelay);
+    if (isComplete && isGeneratingComplete && autoCloseEnabled && !hasError && onClose) {
+      // Add a small delay to ensure toast appears first
+      setTimeout(() => {
+        // Start countdown
+        setCountdown(Math.ceil(autoCloseDelay / 1000));
+        
+        // Update countdown every second
+        countdownRef.current = setInterval(() => {
+          setCountdown(prev => {
+            if (prev === null || prev <= 1) {
+              return null;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        
+        // Auto close after delay
+        timeoutRef.current = setTimeout(() => {
+          onClose();
+        }, autoCloseDelay);
+      }, 100); // 100ms delay to ensure toast appears first
     }
     
     return () => {
@@ -108,7 +114,7 @@ export const LoadingModal: React.FC<LoadingModalProps> = ({
       }
       setCountdown(null);
     };
-  }, [isComplete, autoCloseEnabled, hasError, onClose, autoCloseDelay]);
+  }, [isComplete, isGeneratingComplete, autoCloseEnabled, hasError, onClose, autoCloseDelay]);
 
   const handleAutoCloseToggle = (enabled: boolean) => {
     setAutoCloseEnabled(enabled);
@@ -214,7 +220,13 @@ export const LoadingModal: React.FC<LoadingModalProps> = ({
           <div className="p-6 pt-0 flex justify-end">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors"
+              disabled={isComplete && (!isGeneratingComplete || (countdown !== null && countdown > 0))}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                isComplete && (!isGeneratingComplete || (countdown !== null && countdown > 0))
+                  ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                  : 'bg-blue-500 hover:bg-blue-600 text-white'
+              }`}
+              title={isComplete && !isGeneratingComplete ? 'Waiting for commit messages to be generated...' : ''}
             >
               {hasError ? 'Close' : 'Continue'}
             </button>

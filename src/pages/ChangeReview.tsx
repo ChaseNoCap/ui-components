@@ -80,7 +80,17 @@ export const ChangeReviewPage: React.FC = () => {
 
     try {
       const reviewReport = await reviewService.performComprehensiveReview(
-        (progress) => setScanProgress(progress),
+        (progress) => {
+          setScanProgress(progress);
+          // When complete stage is reached and autoClose is false, keep modal open
+          if (progress.stage === 'complete' && !autoCloseEnabled) {
+            // Keep isScanning true to keep modal open
+            setIsScanning(true);
+          } else if (progress.stage === 'complete' && autoCloseEnabled) {
+            // Allow modal to auto-close
+            setIsScanning(true); // Still true, let modal handle the close
+          }
+        },
         (entry) => setLogEntries(prev => [...prev, entry])
       );
       
@@ -97,9 +107,8 @@ export const ChangeReviewPage: React.FC = () => {
       // The modal will handle closing based on auto-close settings
       toast.success('Change review completed successfully!');
       
-      // Clear scanning state on success
-      setIsScanning(false);
-      setScanProgress(null);
+      // Don't clear scanning state here - let the modal handle it
+      // The modal's onClose will clear these states
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
@@ -110,7 +119,7 @@ export const ChangeReviewPage: React.FC = () => {
       // Reset the review state in case of error to allow retry
       graphqlChangeReviewService.resetReviewState();
     }
-  }, [reviewService]);
+  }, [reviewService, autoCloseEnabled]);
 
   // Update the ref whenever startReview changes
   React.useEffect(() => {
