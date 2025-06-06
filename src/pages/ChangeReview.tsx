@@ -555,17 +555,7 @@ export const ChangeReviewPage: React.FC = () => {
           </CardContent>
         </Card>
       )}
-      {(isWaiting || committingRepos.size > 0) && !isRefreshing && (
-        <div className="fixed top-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          {operationProgress.total > 0 
-            ? `Git operations: ${operationProgress.completed}/${operationProgress.total}`
-            : committingRepos.size > 0
-            ? `Processing ${committingRepos.size} repositories...`
-            : 'Processing git operations...'}
-        </div>
-      )}
-
+     
       {/* Loading Modal - Only show if actively scanning and not manually closed */}
       {isScanning && scanProgress && !wasManuallyClosed && (
         <LoadingModal
