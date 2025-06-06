@@ -1147,6 +1147,8 @@ export const graphqlChangeReviewService = {
     repositoryPath: string
   ): Promise<{ success: boolean; branch?: string; error?: string }> {
     try {
+      console.log('[graphqlChangeReviewService] pushRepository called for:', repositoryPath);
+      
       const { data } = await client.mutate({
         mutation: PUSH_CHANGES,
         variables: { 
@@ -1157,12 +1159,16 @@ export const graphqlChangeReviewService = {
         }
       });
       
+      console.log('[graphqlChangeReviewService] Push response:', data);
+      
       if (data?.pushChanges) {
-        return {
+        const result = {
           success: data.pushChanges.success,
           branch: data.pushChanges.branch,
           error: data.pushChanges.error
         };
+        console.log('[graphqlChangeReviewService] Push result:', result);
+        return result;
       }
       
       return {
@@ -1170,10 +1176,19 @@ export const graphqlChangeReviewService = {
         error: 'No data returned from push mutation'
       };
     } catch (error) {
-      console.error('Push error:', error);
+      console.error('[graphqlChangeReviewService] Push error:', error);
+      // Extract more specific error messages
+      let errorMessage = 'Failed to push';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        // Check for GraphQL errors
+        if ((error as any).graphQLErrors?.length > 0) {
+          errorMessage = (error as any).graphQLErrors[0].message;
+        }
+      }
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to push'
+        error: errorMessage
       };
     }
   },

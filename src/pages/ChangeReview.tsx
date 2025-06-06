@@ -239,7 +239,28 @@ export const ChangeReviewPage: React.FC = () => {
   const commitAll = useCallback(async (shouldPush = false) => {
     if (!report) return;
     
-    const reposToCommit = report.repositories.filter(r => r.hasChanges && r.generatedCommitMessage);
+    // Get repos with changes
+    let reposToCommit = report.repositories.filter(r => r.hasChanges && r.generatedCommitMessage);
+    
+    // Check if meta repository has changes but no message (common with submodule updates)
+    const metaRepo = report.repositories.find(r => r.name === 'meta-gothic-framework');
+    if (metaRepo && metaRepo.hasChanges && !metaRepo.generatedCommitMessage) {
+      console.log('[ChangeReview] Meta repo has changes but no commit message, generating default message');
+      
+      // Generate a default message based on submodule changes
+      const submoduleChanges = report.repositories
+        .filter(r => r.path.includes('packages/') && r.hasChanges)
+        .map(r => r.name);
+      
+      metaRepo.generatedCommitMessage = submoduleChanges.length > 0
+        ? `chore: update submodules (${submoduleChanges.join(', ')})`
+        : 'chore: update repository';
+      
+      // Add meta repo to commit list if not already there
+      if (!reposToCommit.find(r => r.name === 'meta-gothic-framework')) {
+        reposToCommit = [...reposToCommit, metaRepo];
+      }
+    }
     
     console.log('[ChangeReview] commitAll called:', {
       shouldPush,
@@ -256,67 +277,10 @@ export const ChangeReviewPage: React.FC = () => {
     reposToCommit.forEach(repo => {
       setCommittingRepos(prev => new Set(prev).add(repo.name));
     });
-    setIsRefreshing(true);
     
     try {
-      // Use a common commit message (from the first non-submodule repo or fallback)
-      const parentRepo = reposToCommit.find(r => !r.path.includes('packages/'));
-      const commonMessage = parentRepo?.generatedCommitMessage || reposToCommit[0]?.generatedCommitMessage || 'Update multiple repositories';
-      
-      console.log('[ChangeReview] Using commit message:', commonMessage);
-      
-      if (shouldPush) {
-        // Use hierarchical commit and push for proper ordering
-        console.log('[ChangeReview] Attempting hierarchicalCommitAndPush...');
-        const hasMethod = typeof (reviewService as any).hierarchicalCommitAndPush === 'function';
-        console.log('[ChangeReview] hierarchicalCommitAndPush available:', hasMethod);
-        
-        const result = await (reviewService as any).hierarchicalCommitAndPush?.(commonMessage);
-        
-        console.log('[ChangeReview] hierarchicalCommitAndPush result:', result);
-        
-        if (result) {
-          // Process commit results
-          if (result.commitResult) {
-            const commitResult = result.commitResult;
-            if (commitResult.success) {
-              toast.success(`Successfully committed ${commitResult.successCount}/${commitResult.totalRepositories} repositories`);
-            } else {
-              toast.error(`Commit partially failed: ${commitResult.error || 'Unknown error'}`);
-            }
-            
-            // Show individual commit results
-            commitResult.submoduleCommits?.forEach((commit: any) => {
-              if (commit.success) {
-                console.log(`✓ Committed ${commit.repository}`);
-              } else {
-                console.error(`✗ Failed ${commit.repository}: ${commit.error}`);
-              }
-            });
-            
-            if (commitResult.parentCommit?.success) {
-              console.log(`✓ Committed meta-gothic-framework`);
-            }
-          }
-          
-          // Process push results
-          if (result.pushResults) {
-            result.pushResults.forEach((push: any) => {
-              if (push.success) {
-                toast.success(`Successfully pushed ${push.repository}`);
-              } else {
-                toast.error(`Failed to push ${push.repository}: ${push.error || 'Unknown error'}`);
-              }
-            });
-          }
-        } else {
-          // Fallback to sequential commit using GitOperationManager
-          await commitAllSequentially(shouldPush);
-        }
-      } else {
-        // Just commit without push - use sequential approach
-        await commitAllSequentially(false);
-      }
+      // Always use sequential approach for better control and feedback
+      await commitAllSequentially(shouldPush);
     } catch (err) {
       toast.error(`Commit operation failed: ${err}`);
     } finally {
@@ -450,8 +414,7 @@ export const ChangeReviewPage: React.FC = () => {
       return;
     }
     
-    // Set refreshing state
-    setIsRefreshing(true);
+    // Don't set refreshing here - let operations complete first
     
     try {
       console.log('[ChangeReview] Starting push all process');
@@ -584,11 +547,13 @@ export const ChangeReviewPage: React.FC = () => {
         </div>
       )}
       
-      {isWaiting && !isRefreshing && (
+      {(isWaiting || committingRepos.size > 0) && !isRefreshing && (
         <div className="fixed top-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
           <RefreshCw className="h-4 w-4 animate-spin" />
           {operationProgress.total > 0 
             ? `Git operations: ${operationProgress.completed}/${operationProgress.total}`
+            : committingRepos.size > 0
+            ? `Processing ${committingRepos.size} repositories...`
             : 'Processing git operations...'}
         </div>
       )}
