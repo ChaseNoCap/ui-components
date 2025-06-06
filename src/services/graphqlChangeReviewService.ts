@@ -6,7 +6,8 @@ import {
 } from '../graphql/operations';
 import {
   HIERARCHICAL_COMMIT,
-  HIERARCHICAL_COMMIT_AND_PUSH
+  HIERARCHICAL_COMMIT_AND_PUSH,
+  PUSH_CHANGES
 } from '../graphql/git-operations';
 import type { 
   ChangeReviewReport, 
@@ -683,6 +684,8 @@ export class GraphQLChangeReviewService {
    */
   async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<any> {
     try {
+      console.log('[graphqlChangeReviewService] batchCommit called with:', commits);
+      
       // Use hierarchical commit for proper submodule-first ordering
       // Extract a common commit message - use the first non-submodule message or fallback
       const parentRepoCommit = commits.find(c => !c.repoPath.includes('packages/'));
@@ -693,10 +696,14 @@ export class GraphQLChangeReviewService {
         stageAll: true
       };
 
+      console.log('[graphqlChangeReviewService] Calling HIERARCHICAL_COMMIT with input:', input);
+
       const { data } = await client.mutate({
         mutation: HIERARCHICAL_COMMIT,
         variables: { input }
       });
+      
+      console.log('[graphqlChangeReviewService] HIERARCHICAL_COMMIT response:', data);
 
       // Transform hierarchical result to match expected format
       const results = [];
@@ -725,14 +732,17 @@ export class GraphQLChangeReviewService {
         });
       }
 
-      return {
+      const response = {
         success: data.hierarchicalCommit.success,
         results,
         totalRepositories: data.hierarchicalCommit.totalRepositories,
         successCount: data.hierarchicalCommit.successCount
       };
+      
+      console.log('[graphqlChangeReviewService] batchCommit returning:', response);
+      return response;
     } catch (error) {
-      console.error('Error with hierarchical commit:', error);
+      console.error('[graphqlChangeReviewService] batchCommit error:', error);
       throw error;
     }
   }
@@ -1104,14 +1114,25 @@ export const graphqlChangeReviewService = {
     _files?: string[]
   ): Promise<{ success: boolean; commitHash?: string; error?: string }> {
     try {
+      console.log('[graphqlChangeReviewService] commitRepository called:', {
+        repositoryPath,
+        commitMessage: commitMessage.substring(0, 50) + '...'
+      });
+      
       const commits = await service.batchCommit([{ repoPath: repositoryPath, message: commitMessage }]);
+      console.log('[graphqlChangeReviewService] batchCommit response:', commits);
+      
       const result = commits.results?.[0];
-      return {
+      const response = {
         success: result?.success || false,
         commitHash: result?.commitHash,
         error: result?.error
       };
+      
+      console.log('[graphqlChangeReviewService] commitRepository result:', response);
+      return response;
     } catch (error) {
+      console.error('[graphqlChangeReviewService] commitRepository error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to commit'
@@ -1120,13 +1141,38 @@ export const graphqlChangeReviewService = {
   },
   
   async pushRepository(
-    _repositoryPath: string
+    repositoryPath: string
   ): Promise<{ success: boolean; branch?: string; error?: string }> {
-    // TODO: Implement push functionality when available in GraphQL
-    return {
-      success: false,
-      error: 'Push functionality not yet implemented in GraphQL'
-    };
+    try {
+      const { data } = await client.mutate({
+        mutation: PUSH_CHANGES,
+        variables: { 
+          input: {
+            repository: repositoryPath,
+            setUpstream: true
+          }
+        }
+      });
+      
+      if (data?.pushChanges) {
+        return {
+          success: data.pushChanges.success,
+          branch: data.pushChanges.branch,
+          error: data.pushChanges.error
+        };
+      }
+      
+      return {
+        success: false,
+        error: 'No data returned from push mutation'
+      };
+    } catch (error) {
+      console.error('Push error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to push'
+      };
+    }
   },
   
   async batchCommit(commits: Array<{ repoPath: string; message: string }>): Promise<any> {

@@ -182,8 +182,11 @@ class GitServiceGraphQL {
       const { data } = await apolloClient.mutate({
         mutation: PUSH_CHANGES,
         variables: {
-          path: repoPath,
-          branch
+          input: {
+            repository: repoPath,
+            branch,
+            setUpstream: true
+          }
         }
       });
 

@@ -1,5 +1,14 @@
 import { gql } from '@apollo/client';
 
+// Input types for mutations
+export interface PushInput {
+  repository: string;
+  remote?: string;
+  branch?: string;
+  setUpstream?: boolean;
+  pushTags?: boolean;
+}
+
 // Query to get repository status
 export const GET_REPOSITORY_STATUS = gql`
   query GetRepositoryStatus($path: String!) {
@@ -169,11 +178,13 @@ export const BATCH_COMMIT = gql`
 
 // Mutation to push changes
 export const PUSH_CHANGES = gql`
-  mutation PushChanges($path: String!, $branch: String) {
-    pushChanges(path: $path, branch: $branch) {
+  mutation PushChanges($input: PushInput!) {
+    pushChanges(input: $input) {
       success
-      message
-      pushedCommits
+      remote
+      branch
+      error
+      repository
     }
   }
 `;
