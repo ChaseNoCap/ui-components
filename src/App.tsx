@@ -12,6 +12,7 @@ import { TokenValidationProvider, useTokenValidation } from './contexts';
 import { ThemeProvider } from './context';
 import { ToastProvider, ToastConnector } from './components/Toast';
 import { GraphQLProvider } from './providers/GraphQLProvider';
+import { FullPageSpinnerProvider } from './contexts/FullPageSpinnerContext';
 import Config from './pages/Config';
 import { GraphQLDebug } from './components/GraphQLDebug';
 import { ConditionalDevTools } from './components/ConditionalDevTools';
@@ -77,13 +78,15 @@ export const App: React.FC = () => {
         <QueryClientProvider client={queryClient}>
           <GraphQLProvider>
             <TokenValidationProvider>
-              <ToastProvider position="bottom-center">
-                <ToastConnector />
-                <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-                  <DashboardContent />
-                  <ConditionalDevTools />
-                </Router>
-              </ToastProvider>
+              <FullPageSpinnerProvider>
+                <ToastProvider position="bottom-center">
+                  <ToastConnector />
+                  <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+                    <DashboardContent />
+                    <ConditionalDevTools />
+                  </Router>
+                </ToastProvider>
+              </FullPageSpinnerProvider>
             </TokenValidationProvider>
           </GraphQLProvider>
         </QueryClientProvider>

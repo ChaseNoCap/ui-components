@@ -25,12 +25,14 @@ import {
 } from 'lucide-react';
 import { Textarea } from '../components/ui/textarea';
 import { useGitOperationManager } from '../hooks/useGitOperationManager';
-import { toast } from '../lib/toast';
 import { settingsService } from '../services/settingsService';
+import { useFullPageSpinner } from '@/contexts/FullPageSpinnerContext';
 
 export const ChangeReviewPage: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [wasManuallyClosed, setWasManuallyClosed] = useState(false);
+  const fullPageSpinner = useFullPageSpinner();
   const [report, setReport] = useState<ChangeReviewReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
@@ -73,6 +75,14 @@ export const ChangeReviewPage: React.FC = () => {
     // Reset review state to allow refresh
     reviewService.resetReviewState();
     
+    // Clear any previous state before starting
+    setIsScanning(false);
+    setScanProgress(null);
+    setWasManuallyClosed(false); // Reset manual close flag
+    
+    // Small delay to ensure clean state
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     setIsScanning(true);
     setError(null);
     setScanProgress({ stage: 'scanning', message: 'Initializing...' });
@@ -82,14 +92,9 @@ export const ChangeReviewPage: React.FC = () => {
       const reviewReport = await reviewService.performComprehensiveReview(
         (progress) => {
           setScanProgress(progress);
-          // When complete stage is reached and autoClose is false, keep modal open
-          if (progress.stage === 'complete' && !autoCloseEnabled) {
-            // Keep isScanning true to keep modal open
-            setIsScanning(true);
-          } else if (progress.stage === 'complete' && autoCloseEnabled) {
-            // Allow modal to auto-close
-            setIsScanning(true); // Still true, let modal handle the close
-          }
+          // Don't modify isScanning here - let the modal handle its own lifecycle
+          // The modal will stay open as long as isScanning is true
+          // and will close when the user clicks Continue or it auto-closes
         },
         (entry) => setLogEntries(prev => [...prev, entry])
       );
@@ -103,16 +108,11 @@ export const ChangeReviewPage: React.FC = () => {
         .map(r => r.name);
       setExpandedRepos(new Set(reposWithChanges));
       
-      // Show success toast
-      // The modal will handle closing based on auto-close settings
-      toast.success('Change review completed successfully!');
-      
       // Don't clear scanning state here - let the modal handle it
       // The modal's onClose will clear these states
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
-      toast.error(`Review failed: ${errorMessage}`);
       setIsScanning(false);
       setScanProgress(null);
       setIsRefreshing(false);
@@ -171,13 +171,12 @@ export const ChangeReviewPage: React.FC = () => {
     });
 
     cancelEditing(repoName);
-    toast.success(`Updated commit message for ${repoName}`);
   }, [editingMessages, report]);
 
   // Commit changes for a repository
   const commitRepository = useCallback(async (repo: RepositoryChangeData, shouldPush = false) => {
     if (!repo.generatedCommitMessage) {
-      toast.error('No commit message available');
+      setError('No commit message available');
       return false;
     }
 
@@ -248,6 +247,9 @@ export const ChangeReviewPage: React.FC = () => {
   const commitAll = useCallback(async (shouldPush = false) => {
     if (!report) return;
     
+    // Show full page spinner
+    fullPageSpinner.show('Committing changes...', 'Please wait while we commit your changes');
+    
     // Get repos with changes
     let reposToCommit = report.repositories.filter(r => r.hasChanges && r.generatedCommitMessage);
     
@@ -278,7 +280,7 @@ export const ChangeReviewPage: React.FC = () => {
     });
     
     if (reposToCommit.length === 0) {
-      toast.error('No repositories with commit messages to commit');
+      setError('No repositories with commit messages to commit');
       return;
     }
     
@@ -291,10 +293,11 @@ export const ChangeReviewPage: React.FC = () => {
       // Always use sequential approach for better control and feedback
       await commitAllSequentially(shouldPush);
     } catch (err) {
-      toast.error(`Commit operation failed: ${err}`);
+      console.error('Commit operation failed:', err);
     } finally {
-      // Clear all committing states
+      // Clear all committing states and hide spinner
       setCommittingRepos(new Set());
+      fullPageSpinner.hide();
     }
     
     // Helper function for sequential commit
@@ -332,6 +335,7 @@ export const ChangeReviewPage: React.FC = () => {
         }
         
         console.log(`[ChangeReview] Executing ${commitOperations.length} commit operations sequentially`);
+        fullPageSpinner.update('Committing repositories...', `Processing ${commitOperations.length} repositories`);
         const commitResults = await executeOperations(commitOperations);
         
         // Check commit results
@@ -346,11 +350,11 @@ export const ChangeReviewPage: React.FC = () => {
             console.error(`[ChangeReview] Commit failed for ${result.id}:`, result.error);
           });
           
-          toast.error(`${failedCommits.length} repositories failed to commit. Check console for details.`);
+          console.error(`${failedCommits.length} repositories failed to commit`);
           
           // Don't proceed to push if any commits failed
           if (push) {
-            toast.warning('Skipping push due to commit failures');
+            console.warn('Skipping push due to commit failures');
           }
           return;
         }
@@ -380,6 +384,7 @@ export const ChangeReviewPage: React.FC = () => {
           }
           
           console.log(`[ChangeReview] Executing ${pushOperations.length} push operations sequentially`);
+          fullPageSpinner.update('Pushing to remote...', `Uploading ${pushOperations.length} repositories`);
           const pushResults = await executeOperations(pushOperations);
           
           // Check push results
@@ -394,9 +399,9 @@ export const ChangeReviewPage: React.FC = () => {
               console.error(`[ChangeReview] Push failed for ${result.id}:`, result.error);
             });
             
-            toast.warning(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
+            console.warn(`${successfulPushes.length} repositories pushed, ${failedPushes.length} failed`);
           } else {
-            toast.success(`All ${successfulPushes.length} repositories pushed successfully`);
+            console.log(`All ${successfulPushes.length} repositories pushed successfully`);
           }
         }
       } finally {
@@ -412,7 +417,7 @@ export const ChangeReviewPage: React.FC = () => {
         }, 1000);
       }
     }
-  }, [report, reviewService, getLatestCommitHash, createCommitOperation, createPushOperation, executeOperations]);
+  }, [report, reviewService, getLatestCommitHash, createCommitOperation, createPushOperation, executeOperations, fullPageSpinner]);
 
   // Push all repositories that are ahead
   const pushAll = useCallback(async () => {
@@ -421,7 +426,7 @@ export const ChangeReviewPage: React.FC = () => {
     const reposToPush = report.repositories.filter(r => r.branch?.ahead > 0);
     
     if (reposToPush.length === 0) {
-      toast.info('No repositories need pushing');
+      setError('No repositories need pushing');
       return;
     }
     
@@ -465,7 +470,7 @@ export const ChangeReviewPage: React.FC = () => {
         toast.success(`All ${successfulPushes.length} repositories pushed successfully`);
       }
     } catch (err) {
-      toast.error(`Push operation failed: ${err}`);
+      console.error(`Push operation failed: ${err}`);
     } finally {
       // Always refresh after operations complete
       console.log('[ChangeReview] Push operations complete, refreshing data...');
@@ -495,7 +500,6 @@ export const ChangeReviewPage: React.FC = () => {
   const handleAutoCloseChange = useCallback((enabled: boolean) => {
     setAutoCloseEnabled(enabled);
     settingsService.updateModalSettings('graphqlProgress', { autoClose: enabled });
-    toast.success(`Auto-close ${enabled ? 'enabled' : 'disabled'}`);
   }, []);
 
   // Get status badge
@@ -570,8 +574,8 @@ export const ChangeReviewPage: React.FC = () => {
         </div>
       )}
 
-      {/* Loading Modal */}
-      {isScanning && scanProgress && (
+      {/* Loading Modal - Only show if actively scanning and not manually closed */}
+      {isScanning && scanProgress && !wasManuallyClosed && (
         <LoadingModal
           isOpen={true}
           title="Performing Change Review"
@@ -608,6 +612,7 @@ export const ChangeReviewPage: React.FC = () => {
           onClose={() => {
             setIsScanning(false);
             setScanProgress(null);
+            setWasManuallyClosed(true); // Mark as manually closed
           }}
           allowClose={true}
         />

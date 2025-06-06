@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GitOperationManager, GitOperationOptions } from '../services/GitOperationManager';
-import { toast } from '../lib/toast';
+// Removed toast import - using full page spinner instead
 
 interface UseGitOperationManagerOptions extends GitOperationOptions {
   showToasts?: boolean;
@@ -20,24 +20,15 @@ export function useGitOperationManager(options: UseGitOperationManagerOptions = 
         ...managerOptions,
         onOperationStart: (operation) => {
           setCurrentOperation(`${operation.type} ${operation.repository}`);
-          if (showToasts) {
-            toast.info(`Starting ${operation.type} for ${operation.repository}...`);
-          }
+          // Removed toast - handled by full page spinner
         },
         onOperationComplete: (result) => {
-          if (showToasts) {
-            if (result.success) {
-              toast.success(`Completed ${result.id}`);
-            } else {
-              toast.error(`Failed ${result.id}: ${result.error?.message}`);
-            }
-          }
+          // Removed toast - handled by full page spinner
           setProgress(prev => ({ ...prev, completed: prev.completed + 1 }));
         },
         onOperationError: (operation, error, willRetry) => {
-          if (showToasts && !willRetry) {
-            toast.error(`${operation.type} failed for ${operation.repository}: ${error.message}`);
-          }
+          // Removed toast - handled by full page spinner
+          console.error(`${operation.type} failed for ${operation.repository}:`, error);
         }
       });
     }
