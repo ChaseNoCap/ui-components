@@ -58,7 +58,7 @@ export function GraphQLProvider({ children }: GraphQLProviderProps) {
             </pre>
             <p className="mt-3 font-semibold">Or start services individually:</p>
             <ul className="list-disc list-inside mt-1 ml-2">
-              <li>repo-agent-service (port 3004)</li>
+              <li>git-service (port 3004)</li>
               <li>claude-service (port 3002)</li>
               <li>gateway (port 3000)</li>
             </ul>
