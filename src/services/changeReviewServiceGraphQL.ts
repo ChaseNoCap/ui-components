@@ -393,14 +393,17 @@ export class ChangeReviewServiceGraphQL {
       const { data } = await apolloClient.mutate({
         mutation: COMMIT_CHANGES,
         variables: {
-          path: repoPath,
-          message
+          input: {
+            repository: repoPath,
+            message,
+            stageAll: true
+          }
         }
       });
       
       return {
         success: data.commitChanges.success,
-        output: data.commitChanges.message
+        output: data.commitChanges.error || 'Commit successful'
       };
     } catch (error) {
       console.error('Error committing repository:', error);
@@ -422,22 +425,25 @@ export class ChangeReviewServiceGraphQL {
       const { data } = await apolloClient.mutate({
         mutation: BATCH_COMMIT,
         variables: {
-          commits: commits.map(c => ({
-            path: c.repoPath,
-            message: c.message
-          }))
+          input: {
+            commits: commits.map(c => ({
+              repository: c.repoPath,
+              message: c.message,
+              stageAll: true
+            }))
+          }
         }
       });
       
-      const results = data.batchCommit.map((result: any) => ({
-        repository: result.path,
+      const results = data.batchCommit.results.map((result: any) => ({
+        repository: result.repository,
         success: result.success,
-        output: result.message,
+        output: result.error || 'Commit successful',
         error: result.error
       }));
       
       return {
-        success: results.every((r: any) => r.success),
+        success: data.batchCommit.successCount === commits.length,
         results
       };
     } catch (error) {
@@ -461,14 +467,16 @@ export class ChangeReviewServiceGraphQL {
       const { data } = await apolloClient.mutate({
         mutation: PUSH_CHANGES,
         variables: {
-          path: repoPath
+          input: {
+            repository: repoPath
+          }
         }
       });
       
       return {
         success: data.pushChanges.success,
-        output: data.pushChanges.message,
-        branch: 'main'
+        output: data.pushChanges.error || 'Push successful',
+        branch: data.pushChanges.branch
       };
     } catch (error) {
       console.error('Error pushing repository:', error);

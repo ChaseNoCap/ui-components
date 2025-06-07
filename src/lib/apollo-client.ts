@@ -13,8 +13,8 @@ import { RetryLink } from '@apollo/client/link/retry';
 import { YogaSSELink } from './sse-link';
 
 // Environment configuration - Use federated gateway endpoint
-const GRAPHQL_ENDPOINT = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:3000/graphql';
-const WS_ENDPOINT = import.meta.env.VITE_GATEWAY_WS_URL || 'ws://localhost:3000/graphql';
+const GRAPHQL_ENDPOINT = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:4000/graphql';
+const WS_ENDPOINT = import.meta.env.VITE_GATEWAY_WS_URL || 'ws://localhost:4000/graphql';
 
 // Create HTTP link for queries and mutations
 const httpLink = createHttpLink({

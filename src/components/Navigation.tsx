@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, Wrench, Moon, Sun, ChevronDown, Settings } from 'lucide-react';
+import { Activity, Wrench, Moon, Sun, ChevronDown, Settings, BarChart3 } from 'lucide-react';
 import { TokenStatusIndicator } from './TokenValidation';
 import { useTokenValidation } from '../contexts';
 import { useTheme } from '../context';
@@ -34,6 +34,11 @@ export const Navigation: React.FC = () => {
       label: 'Health Monitor',
       icon: Activity,
       path: '/',
+    },
+    {
+      label: 'Observability',
+      icon: BarChart3,
+      path: '/observability',
     },
     {
       label: 'Tools',

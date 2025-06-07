@@ -152,11 +152,13 @@ export const GET_SUBMODULES = gql`
 
 // Mutation to commit changes
 export const COMMIT_CHANGES = gql`
-  mutation CommitChanges($path: String!, $message: String!, $files: [String!]) {
-    commitChanges(path: $path, message: $message, files: $files) {
+  mutation CommitChanges($input: CommitInput!) {
+    commitChanges(input: $input) {
       success
-      sha
-      message
+      commitHash
+      error
+      repository
+      committedFiles
       isClean
       remainingFiles
     }
@@ -165,13 +167,20 @@ export const COMMIT_CHANGES = gql`
 
 // Mutation for batch commit
 export const BATCH_COMMIT = gql`
-  mutation BatchCommit($commits: [CommitInput!]!) {
-    batchCommit(commits: $commits) {
-      path
-      success
-      sha
-      message
-      error
+  mutation BatchCommit($input: BatchCommitInput!) {
+    batchCommit(input: $input) {
+      totalRepositories
+      successCount
+      results {
+        repository
+        success
+        commitHash
+        error
+        committedFiles
+        isClean
+        remainingFiles
+      }
+      executionTime
     }
   }
 `;

@@ -16,6 +16,7 @@ import { FullPageSpinnerProvider } from './contexts/FullPageSpinnerContext';
 import Config from './pages/Config';
 import { GraphQLDebug } from './components/GraphQLDebug';
 import { ConditionalDevTools } from './components/ConditionalDevTools';
+import { Observability } from './pages/Observability';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +66,7 @@ const DashboardContent: React.FC = () => {
         <Route path="/tools/change-review" element={<ChangeReviewPage />} />
         <Route path="/config" element={<Config />} />
         <Route path="/claude-console" element={<ClaudeConsoleStandalone />} />
+        <Route path="/observability" element={<Observability />} />
       </Routes>
       <GraphQLDebug />
     </div>
