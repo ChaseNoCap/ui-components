@@ -253,6 +253,16 @@ export class SseLink<TContext = any> extends ApolloLink {
       this.cleanupSubscription(subscriptionId);
     });
 
+    // Handle heartbeat events
+    eventSource.addEventListener('heartbeat', () => {
+      this.log('debug', `Received heartbeat for ${operation.operationName}`);
+      const subscription = this.subscriptions.get(subscriptionId);
+      if (subscription) {
+        subscription.lastActivityAt = Date.now();
+      }
+      this.resetHeartbeatMonitor(subscriptionId);
+    });
+
     // Handle generic message events (for heartbeats)
     eventSource.onmessage = (event) => {
       // Heartbeats come as comments, which don't trigger onmessage
