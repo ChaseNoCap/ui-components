@@ -322,14 +322,12 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
         messageCount: messages.length,
         lastMessage: messages[messages.length - 1]?.content
       });
-      // Use the parent directory of meta-gothic-framework as the working directory
-      // This ensures Claude can access all repositories when asked about git changes
-      const workingDirectory = '/Users/josh/Documents';
-      
+      // Let the service handle working directory determination
+      // The service will use WORKSPACE_ROOT env var or process.cwd()
       const result = await claudeServiceGraphQL.executeCommand(
         sessionIdToUse,
-        input.trim(),
-        workingDirectory
+        input.trim()
+        // workingDirectory is optional - service will use its configured workspace root
       );
       console.log('Claude command result:', result);
 
