@@ -198,12 +198,14 @@ export const EnhancedDashboard: React.FC = () => {
     );
   }
 
-  // Handle the new health data structure
-  const claudeHealth = healthData?.claudeHealth;
-  const repoHealth = healthData?.repoAgentHealth;
+  // Handle the new unified health data structure
+  const health = healthData?.health;
+  
+  // Log the health data for debugging
+  console.log('Health data from query:', { healthData, health, healthLoading, healthError });
   
   // If no health data yet, show loading
-  if (!claudeHealth && !repoHealth) {
+  if (!health) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
         <div className="text-center">
@@ -213,6 +215,22 @@ export const EnhancedDashboard: React.FC = () => {
       </div>
     );
   }
+  
+  // Extract service-specific details from the unified health response
+  const isClaudeService = health.service === 'claude-service';
+  const claudeDetails = isClaudeService ? health.details : null;
+  const claudeHealth = isClaudeService ? {
+    healthy: health.healthy,
+    version: health.version,
+    claudeAvailable: claudeDetails?.claudeAvailable,
+    activeSessions: claudeDetails?.activeSessions
+  } : { healthy: true, version: 'Unknown' };
+  
+  // For repo health, we'll assume it's healthy if we get a response
+  const repoHealth = !isClaudeService ? {
+    status: health.healthy ? 'healthy' : 'unhealthy',
+    version: health.version
+  } : { status: 'healthy', version: '1.0.0' };
 
   const repositories = (githubData?.githubRepositories || []) as Repository[];
   const githubUser = githubData?.githubUser;

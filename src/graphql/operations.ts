@@ -40,16 +40,12 @@ export const AGENT_RUN_FRAGMENT = gql`
 
 export const SYSTEM_HEALTH_QUERY = gql`
   query SystemHealth {
-    claudeHealth {
+    health {
       healthy
-      claudeAvailable
+      service
       version
-      claudeVersion
-      activeSessions
-    }
-    repoAgentHealth {
-      status
-      version
+      timestamp
+      details
     }
   }
 `;
