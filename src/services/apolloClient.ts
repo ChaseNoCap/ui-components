@@ -2,6 +2,9 @@ import { ApolloClient, InMemoryCache, createHttpLink, split } from '@apollo/clie
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import { getMainDefinition } from '@apollo/client/utilities';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('apolloClient');
 
 // HTTP link for queries and mutations - Use federated gateway
 const httpLink = createHttpLink({
@@ -21,11 +24,11 @@ const wsLink = new GraphQLWsLink(
     keepAlive: 10_000, // 10 second heartbeat
     // Connection lifecycle callbacks
     on: {
-      connected: () => console.log('WebSocket connected'),
-      closed: () => console.log('WebSocket closed'),
-      error: (error) => console.error('WebSocket error:', error),
-      ping: () => console.debug('WebSocket ping'),
-      pong: () => console.debug('WebSocket pong'),
+      connected: () => logger.info('WebSocket connected'),
+      closed: () => logger.info('WebSocket closed'),
+      error: (error) => logger.error('WebSocket error:', error),
+      ping: () => logger.debug('WebSocket ping'),
+      pong: () => logger.debug('WebSocket pong'),
     },
   })
 );

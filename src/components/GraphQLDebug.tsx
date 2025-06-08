@@ -3,6 +3,9 @@ import { useQuery, gql } from '@apollo/client';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { settingsService } from '../services/settingsService';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('GraphQLDebug');
 
 const TEST_QUERY = gql`
   query DebugScanAllDetailed {
@@ -47,10 +50,10 @@ export const GraphQLDebug: React.FC = () => {
     fetchPolicy: 'network-only',
     errorPolicy: 'all',
     onCompleted: (data) => {
-      console.log('✅ Query completed:', data);
+      logger.info('✅ Query completed:', data);
     },
     onError: (error) => {
-      console.error('❌ Query error:', error);
+      logger.error('❌ Query error:', error);
     }
   });
 
