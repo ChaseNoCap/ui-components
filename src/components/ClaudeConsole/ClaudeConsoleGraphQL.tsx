@@ -293,9 +293,14 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
         sessionId: currentSession?.id || null,
         prompt: input.trim()
       });
+      // Use the parent directory of meta-gothic-framework as the working directory
+      // This ensures Claude can access all repositories when asked about git changes
+      const workingDirectory = '/Users/josh/Documents';
+      
       const result = await claudeServiceGraphQL.executeCommand(
         currentSession?.id || null,
-        input.trim()
+        input.trim(),
+        workingDirectory
       );
       console.log('Claude command result:', result);
 
