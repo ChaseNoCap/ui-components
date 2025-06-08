@@ -21,7 +21,7 @@ interface UserConfig {
 }
 
 const Config: React.FC = () => {
-  const { toast } = useToast();
+  const { showError, showSuccess } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<UserConfig | null>(null);
@@ -93,11 +93,7 @@ const Config: React.FC = () => {
         setConfig(defaultConfig);
       }
     } catch (error) {
-      toast({
-        title: 'Error loading configuration',
-        description: 'Failed to load user preferences',
-        variant: 'destructive',
-      });
+      showError('Error loading configuration', 'Failed to load user preferences');
     } finally {
       setLoading(false);
     }
@@ -118,16 +114,9 @@ const Config: React.FC = () => {
       });
       
       setIsDirty(false);
-      toast({
-        title: 'Configuration saved',
-        description: 'Your preferences have been saved',
-      });
+      showSuccess('Configuration saved', 'Your preferences have been saved');
     } catch (error) {
-      toast({
-        title: 'Error saving configuration',
-        description: 'Failed to save user preferences',
-        variant: 'destructive',
-      });
+      showError('Error saving configuration', 'Failed to save user preferences');
     } finally {
       setSaving(false);
     }
