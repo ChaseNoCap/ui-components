@@ -10,7 +10,7 @@ import { useToastContext } from '../Toast';
 import { claudeSessionManager } from '../../services/claudeSessionManager';
 import { claudeServiceGraphQL } from '../../services/claudeServiceGraphQL';
 import { format } from 'date-fns';
-import { useMutation, useQuery, useLazyQuery } from '@apollo/client';
+import { useMutation, useQuery, useLazyQuery, useSubscription } from '@apollo/client';
 import { GET_SESSION } from '../../graphql/claude-operations';
 import {
   FORK_SESSION,
@@ -26,6 +26,11 @@ import { SessionAnalytics } from './SessionAnalytics';
 import { TemplatesPanel } from './TemplatesPanel';
 import { ResumptionCard } from './ResumptionCard';
 import { GET_RESUMABLE_SESSIONS } from '../../graphql/claude-session-management';
+import {
+  GET_PREWARM_STATUS,
+  CLAIM_PREWARMED_SESSION,
+  PREWARM_STATUS_SUBSCRIPTION
+} from '../../graphql/claude-prewarm';
 
 interface ConsoleMessage {
   id: string;
@@ -79,6 +84,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   const [batchOperation] = useMutation(BATCH_SESSION_OPERATION);
   const [archiveSessionMutation] = useMutation(ARCHIVE_SESSION);
   const [shareSessionMutation] = useMutation(SHARE_SESSION);
+  const [claimPreWarmedSession] = useMutation(CLAIM_PREWARMED_SESSION);
 
   // GraphQL Queries
   const [getSessionDetails] = useLazyQuery(GET_SESSION);
@@ -93,6 +99,10 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
     variables: { limit: 3 },
     skip: currentSession !== null
   });
+  
+  // Subscribe to pre-warm status updates
+  const { data: preWarmData } = useSubscription(PREWARM_STATUS_SUBSCRIPTION);
+  const preWarmStatus = preWarmData?.preWarmStatus;
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -142,6 +152,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
     // Clear current session to force server to create a new one
     setCurrentSession(null);
     setMessages([]);
+    // Don't clear pre-warmed session - it can be reused
     showSuccess('New session created', name || 'New Session');
     
     // The actual session will be created on the first message
@@ -262,11 +273,6 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
   const handleSubmit = async () => {
     if (!input.trim() || isProcessing) return;
 
-    // Create or ensure session exists
-    if (!currentSession) {
-      await createNewSession();
-    }
-
     const userMessage: ConsoleMessage = {
       id: crypto.randomUUID(),
       type: 'user',
@@ -288,9 +294,29 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       };
       setMessages(prev => [...prev, processingMessage]);
 
+      // Determine which session ID to use
+      let sessionIdToUse: string | null = null;
+      
+      if (currentSession) {
+        // Use existing session
+        sessionIdToUse = currentSession.id;
+      } else if (preWarmStatus?.status === 'READY' && preWarmStatus?.sessionId) {
+        // Try to claim the pre-warmed session
+        try {
+          const { data } = await claimPreWarmedSession();
+          if (data?.claimPreWarmedSession?.success && data.claimPreWarmedSession.sessionId) {
+            sessionIdToUse = data.claimPreWarmedSession.sessionId;
+            console.log('Claimed pre-warmed session:', sessionIdToUse);
+          }
+        } catch (error) {
+          console.error('Failed to claim pre-warmed session:', error);
+        }
+      }
+      // If neither exists, pass null and let the server create a new session
+
       // Call Claude via GraphQL
       console.log('Calling Claude via GraphQL with:', {
-        sessionId: currentSession?.id || null,
+        sessionId: sessionIdToUse,
         prompt: input.trim()
       });
       // Use the parent directory of meta-gothic-framework as the working directory
@@ -298,7 +324,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       const workingDirectory = '/Users/josh/Documents';
       
       const result = await claudeServiceGraphQL.executeCommand(
-        currentSession?.id || null,
+        sessionIdToUse,
         input.trim(),
         workingDirectory
       );
@@ -311,7 +337,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
         // Always update the session ID from the server
         if (result.sessionId) {
           if (!currentSession || currentSession.id !== result.sessionId) {
-            const newSession: ClaudeSession = {
+            const newSession: Session = {
               id: result.sessionId,
               name: currentSession?.name || `Session ${new Date().toLocaleTimeString()}`,
               createdAt: currentSession?.createdAt || new Date(),
@@ -870,6 +896,24 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
                 <Terminal className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>Start a conversation with Claude</p>
                 <p className="text-sm mt-2">Type a message below to begin</p>
+                {preWarmStatus?.status === 'WARMING' && (
+                  <div className="mt-4 flex items-center justify-center text-xs">
+                    <Zap className="h-3 w-3 mr-1 animate-pulse text-yellow-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Optimizing session startup...</span>
+                  </div>
+                )}
+                {preWarmStatus?.status === 'READY' && (
+                  <div className="mt-4 flex items-center justify-center text-xs">
+                    <Zap className="h-3 w-3 mr-1 text-green-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Ready for instant response</span>
+                  </div>
+                )}
+                {preWarmStatus?.status === 'FAILED' && (
+                  <div className="mt-4 flex items-center justify-center text-xs">
+                    <AlertCircle className="h-3 w-3 mr-1 text-red-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Session optimization unavailable</span>
+                  </div>
+                )}
               </div>
             </>
           )}

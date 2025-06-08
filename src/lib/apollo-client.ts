@@ -1,3 +1,5 @@
+
+
 import { 
   ApolloClient, 
   InMemoryCache, 
@@ -10,22 +12,39 @@ import {
 import { getMainDefinition } from '@apollo/client/utilities';
 import { onError } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
-import { YogaSSELink } from './sse-link';
+import { SseLink, ConnectionState, ErrorCategory } from './sse-link';
 
 // Environment configuration - Use federated gateway endpoint
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:4000/graphql';
-const WS_ENDPOINT = import.meta.env.VITE_GATEWAY_WS_URL || 'ws://localhost:4000/graphql';
 
 // Create HTTP link for queries and mutations
 const httpLink = createHttpLink({
   uri: GRAPHQL_ENDPOINT,
-  // Remove credentials mode to avoid CORS issues with federation gateway
-  // Authentication is handled at the gateway level
+  // credentials: 'include', // Temporarily disabled due to CORS issues with Cosmo router
+  fetchOptions: {
+    // Set a 25-minute timeout to accommodate Claude CLI's 20-minute processing time
+    // with some buffer for network latency
+    timeout: 25 * 60 * 1000, // 25 minutes = 1,500,000 milliseconds
+  },
 });
 
-// Create SSE link for subscriptions with GraphQL Yoga
-const sseLink = new YogaSSELink({
-  uri: GRAPHQL_ENDPOINT,
+// Create SSE link for subscriptions using our custom implementation
+// For now, connect directly to Claude service for SSE until gateway SSE is configured
+const SSE_ENDPOINT = import.meta.env.VITE_CLAUDE_SSE_URL || 'http://localhost:3002/graphql/stream';
+const sseLink = new SseLink({
+  url: SSE_ENDPOINT,
+  // credentials: 'include', // Temporarily disabled due to CORS issues
+  headers: {
+    'Accept': 'text/event-stream',
+  },
+  retry: {
+    attempts: 5,
+    delay: 1000,
+  },
+  debug: {
+    enabled: process.env.NODE_ENV === 'development',
+    logLevel: 'debug',
+  },
 });
 
 // Enhanced retry link with federation awareness
@@ -160,15 +179,34 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
   }
 });
 
+// SSE Connection monitoring link
+const sseMonitoringLink = new ApolloLink((operation, forward) => {
+  const definition = getMainDefinition(operation.query);
+  const isSubscription = definition.kind === 'OperationDefinition' && definition.operation === 'subscription';
+  
+  if (isSubscription) {
+    // Add subscription tracking to context
+    operation.setContext((context: any) => ({
+      ...context,
+      subscriptionId: Math.random().toString(36).substring(2),
+      startTime: Date.now(),
+    }));
+  }
+  
+  return forward(operation);
+});
+
 // Request timing link (for performance monitoring)
 const timingLink = new ApolloLink((operation, forward) => {
   const startTime = Date.now();
+  const context = operation.getContext();
   
   // Log all GraphQL operations
   console.log(`[Apollo] Executing ${operation.operationName || 'unnamed'} operation:`, {
     operationType: operation.query.definitions[0].operation,
     variables: operation.variables,
-    query: operation.query.loc?.source.body.substring(0, 200)
+    query: operation.query.loc?.source.body.substring(0, 200),
+    subscriptionId: context.subscriptionId
   });
   
   return new Observable(observer => {
@@ -176,15 +214,20 @@ const timingLink = new ApolloLink((operation, forward) => {
       next: (result) => {
         const duration = Date.now() - startTime;
         
-        // Add timing to extensions
-        if (result.extensions) {
-          result.extensions.timing = { duration };
+        // Add timing and subscription info to extensions
+        if (!result.extensions) {
+          result.extensions = {};
+        }
+        result.extensions.timing = { duration };
+        if (context.subscriptionId) {
+          result.extensions.subscriptionId = context.subscriptionId;
         }
         
         console.log(`[Apollo] Completed ${operation.operationName || 'unnamed'} in ${duration}ms:`, {
           hasErrors: !!result.errors,
           dataKeys: result.data ? Object.keys(result.data) : [],
-          errors: result.errors
+          errors: result.errors,
+          subscriptionId: context.subscriptionId
         });
         
         // Log slow queries
@@ -192,13 +235,50 @@ const timingLink = new ApolloLink((operation, forward) => {
           console.warn(`Slow query detected: ${operation.operationName} took ${duration}ms`);
         }
         
+        // Emit custom event for subscription monitoring
+        if (context.subscriptionId) {
+          window.dispatchEvent(new CustomEvent('apollo:subscription-data', {
+            detail: {
+              subscriptionId: context.subscriptionId,
+              operationName: operation.operationName,
+              duration,
+              hasErrors: !!result.errors
+            }
+          }));
+        }
+        
         observer.next(result);
       },
       error: (error) => {
         console.error(`[Apollo] Error in ${operation.operationName || 'unnamed'}:`, error);
+        
+        // Emit error event for subscriptions
+        if (context.subscriptionId) {
+          window.dispatchEvent(new CustomEvent('apollo:subscription-error', {
+            detail: {
+              subscriptionId: context.subscriptionId,
+              operationName: operation.operationName,
+              error: error.message,
+              category: (error as any).category
+            }
+          }));
+        }
+        
         observer.error(error);
       },
-      complete: observer.complete.bind(observer),
+      complete: () => {
+        // Emit complete event for subscriptions
+        if (context.subscriptionId) {
+          window.dispatchEvent(new CustomEvent('apollo:subscription-complete', {
+            detail: {
+              subscriptionId: context.subscriptionId,
+              operationName: operation.operationName
+            }
+          }));
+        }
+        
+        observer.complete();
+      },
     });
     
     return () => subscription.unsubscribe();
@@ -220,10 +300,11 @@ const splitLink = split(
 
 // Combine all links
 const link = ApolloLink.from([
-  timingLink,
-  errorLink,
-  retryLink,
-  splitLink
+  sseMonitoringLink,  // Track subscription lifecycle
+  timingLink,         // Performance monitoring
+  errorLink,          // Error handling
+  retryLink,          // Retry logic
+  splitLink           // Route to HTTP or SSE
 ]);
 
 // Configure cache with type policies
@@ -308,22 +389,26 @@ export const checkGraphQLHealth = async (): Promise<boolean> => {
     const result = await apolloClient.query({
       query: gql`
         query HealthCheck {
-          claudeHealth {
+          health {
             healthy
-            claudeAvailable
-          }
-          repoAgentHealth {
-            status
+            service
+            details
           }
         }
       `,
       fetchPolicy: 'network-only',
     });
     
-    const claudeHealthy = result.data?.claudeHealth?.healthy || false;
-    const repoHealthy = result.data?.repoAgentHealth?.status === 'healthy' || false;
+    // Check if the health query returned data
+    const healthData = result.data?.health;
+    const healthy = healthData?.healthy || false;
     
-    return claudeHealthy && repoHealthy;
+    // Log which service responded (for debugging)
+    if (healthData?.service) {
+      console.log(`Health check responded from: ${healthData.service}`);
+    }
+    
+    return healthy;
   } catch (error) {
     console.error('GraphQL health check failed:', error);
     return false;
@@ -332,3 +417,26 @@ export const checkGraphQLHealth = async (): Promise<boolean> => {
 
 // Export types for use in components
 export type { ApolloClient } from '@apollo/client/core';
+
+// Export SSE link instance for debugging and monitoring
+export { sseLink, ConnectionState, ErrorCategory };
+
+// Helper function to get SSE connection status
+export const getSseConnectionStatus = () => {
+  return sseLink.getActiveSubscriptions();
+};
+
+// Apollo Client extension for SSE monitoring
+export const apolloClientWithSse = Object.assign(apolloClient, {
+  sseLink,
+  getSseConnectionStatus,
+  // Method to check specific subscription health
+  getSubscriptionHealth: (operationName: string) => {
+    const subscriptions = sseLink.getActiveSubscriptions();
+    return subscriptions.find(sub => sub.operationName === operationName);
+  },
+  // Method to dispose all SSE connections
+  disposeSseConnections: () => {
+    sseLink.dispose();
+  }
+});

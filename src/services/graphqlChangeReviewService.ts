@@ -369,13 +369,17 @@ export class GraphQLChangeReviewService {
       this.log('🚀 Sending changes to AI for commit message generation...', 'info');
       this.log(`📄 Context includes: ${input.repositories.reduce((sum, r) => sum + r.filesChanged.length, 0)} files, ${input.repositories.length} repositories`, 'info');
 
-      // Add timeout wrapper similar to executive summary
+      // Add extended timeout for Claude CLI processing
+      // Claude CLI can take up to 20 minutes for complex requests
       let response;
       try {
+        this.log('🤖 Claude is analyzing your code changes. This may take up to 20 minutes for large codebases...', 'info');
+        this.log('☕ Feel free to grab a coffee while Claude thinks deeply about your commits!', 'info');
+        
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => {
-            reject(new Error('Commit message generation timed out after 2 minutes'));
-          }, 120000); // 2 minutes timeout
+            reject(new Error('Commit message generation timed out after 25 minutes. This usually means Claude is processing a very complex request. Please try breaking it into smaller batches.'));
+          }, 25 * 60 * 1000); // 25 minutes timeout (5 min buffer for 20 min Claude processing)
         });
 
         const mutationPromise = client.mutate({
@@ -393,7 +397,8 @@ export class GraphQLChangeReviewService {
         this.log('✅ Received response from AI service', 'info');
       } catch (error: any) {
         if (error.message && error.message.includes('timed out')) {
-          this.log('⏰ Commit message generation timed out after 2 minutes', 'error');
+          this.log('⏰ ' + error.message, 'error');
+          this.log('💡 Tip: Try selecting fewer repositories or simplifying your changes', 'info');
           throw error;
         }
         throw error;
