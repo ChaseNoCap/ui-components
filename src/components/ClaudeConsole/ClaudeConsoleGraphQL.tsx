@@ -317,7 +317,10 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       // Call Claude via GraphQL
       console.log('Calling Claude via GraphQL with:', {
         sessionId: sessionIdToUse,
-        prompt: input.trim()
+        prompt: input.trim(),
+        currentSessionId: currentSession?.id,
+        messageCount: messages.length,
+        lastMessage: messages[messages.length - 1]?.content
       });
       // Use the parent directory of meta-gothic-framework as the working directory
       // This ensures Claude can access all repositories when asked about git changes
@@ -481,14 +484,43 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       return;
     }
 
+    // If no messageIndex provided, find the last assistant message
+    let forkIndex = messageIndex;
+    if (forkIndex === undefined) {
+      // Find the last assistant message (has a response)
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].type === 'assistant') {
+          forkIndex = i;
+          break;
+        }
+      }
+      // If no assistant messages, use the last message
+      if (forkIndex === undefined) {
+        forkIndex = messages.length - 1;
+      }
+    }
+
+    // Convert UI message index to server history index
+    // Server stores each exchange (user prompt + assistant response) as one history entry
+    // UI shows them as separate messages
+    // So we need to count how many complete exchanges happened up to this point
+    let serverHistoryIndex = Math.floor(forkIndex / 2);
+    
+    // If forking from an assistant message, that's the completion of an exchange
+    // If forking from a user message, we want the previous complete exchange
+    if (messages[forkIndex]?.type === 'user' && serverHistoryIndex > 0) {
+      serverHistoryIndex--;
+    }
+
     try {
-      console.log('Forking session:', currentSession.id, 'at index:', messageIndex);
+      console.log('Forking session:', currentSession.id, 'at UI index:', forkIndex, 'server index:', serverHistoryIndex);
       console.log('Current messages:', messages.length);
+      console.log('Fork message type:', messages[forkIndex]?.type);
       const { data } = await forkSession({
         variables: {
           input: {
             sessionId: currentSession.id,
-            messageIndex: messageIndex || messages.length - 1,
+            messageIndex: serverHistoryIndex,
             name: `Fork of ${currentSession.name}`,
             includeHistory: true
           }
@@ -905,7 +937,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
                 {preWarmStatus?.status === 'READY' && (
                   <div className="mt-4 flex items-center justify-center text-xs">
                     <Zap className="h-3 w-3 mr-1 text-green-500" />
-                    <span className="text-gray-600 dark:text-gray-400">Ready for instant response</span>
+                    <span className="text-gray-600 dark:text-gray-400">Ready for fast response</span>
                   </div>
                 )}
                 {preWarmStatus?.status === 'FAILED' && (

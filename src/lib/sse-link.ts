@@ -87,7 +87,7 @@ export class SseLink<TContext = any> extends ApolloLink {
         delay: 1000,
         maxDelay: 30000,
       },
-      heartbeatTimeout: 35000, // Slightly longer than server's 30s heartbeat
+      heartbeatTimeout: 60000, // 60s - double the server's 30s heartbeat for safety
       debug: {
         enabled: false,
         logLevel: 'info',
