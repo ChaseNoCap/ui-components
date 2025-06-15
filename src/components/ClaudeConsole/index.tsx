@@ -11,7 +11,7 @@ interface ConsoleMessage {
   content: string;
   timestamp: Date;
   metadata?: {
-    cost?: number;
+    costUsd?: number;
     duration?: number;
     sessionId?: string;
     turns?: number;
@@ -27,7 +27,7 @@ interface Session {
   metadata?: {
     project?: string;
     task?: string;
-    totalCost?: number;
+    totalCostUsd?: number;
   };
 }
 
@@ -112,7 +112,7 @@ export const ClaudeConsoleLegacy: React.FC = () => {
       messages,
       metadata: {
         ...currentSession.metadata,
-        totalCost: messages.reduce((sum, msg) => sum + (msg.metadata?.cost || 0), 0)
+        totalCostUsd: messages.reduce((sum, msg) => sum + (msg.metadata?.costUsd || 0), 0)
       }
     };
 
@@ -237,7 +237,7 @@ export const ClaudeConsoleLegacy: React.FC = () => {
         content: data.result || data.content || '',
         timestamp: new Date(),
         metadata: {
-          cost: data.cost_usd,
+          costUsd: data.cost_usd,
           duration: data.duration_ms,
           sessionId: data.session_id,
           turns: data.num_turns
@@ -353,9 +353,9 @@ export const ClaudeConsoleLegacy: React.FC = () => {
                 }`}>
                   {format(new Date(session.lastAccessed), 'MMM d, h:mm a')}
                 </div>
-                {session.metadata?.totalCost && (
+                {session.metadata?.totalCostUsd && (
                   <div className="text-xs mt-1 text-green-500">
-                    Cost: ${session.metadata.totalCost.toFixed(4)}
+                    Cost (USD): ${session.metadata.totalCostUsd.toFixed(4)}
                   </div>
                 )}
               </button>
@@ -460,9 +460,9 @@ export const ClaudeConsoleLegacy: React.FC = () => {
                     }`}>
                       {format(message.timestamp, 'HH:mm:ss')}
                     </span>
-                    {message.metadata?.cost && (
+                    {message.metadata?.costUsd && (
                       <span className="text-xs text-green-500">
-                        ${message.metadata.cost.toFixed(4)}
+                        ${message.metadata.costUsd.toFixed(4)}
                       </span>
                     )}
                     {message.metadata?.duration && (

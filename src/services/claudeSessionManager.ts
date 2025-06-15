@@ -11,7 +11,7 @@ interface Session {
   metadata?: {
     project?: string;
     task?: string;
-    totalCost?: number;
+    totalCostUsd?: number;
     archived?: boolean;
     archivedAt?: string;
   };
@@ -229,19 +229,19 @@ class ClaudeSessionManager {
    */
   async getSessionStats(): Promise<{
     totalSessions: number;
-    totalCost: number;
+    totalCostUsd: number;
     totalMessages: number;
     averageSessionLength: number;
   }> {
     const sessions = await this.getAllSessions();
     
     const stats = sessions.reduce((acc, session) => {
-      acc.totalCost += session.metadata?.totalCost || 0;
+      acc.totalCostUsd += session.metadata?.totalCostUsd || 0;
       acc.totalMessages += session.messages.length;
       return acc;
     }, {
       totalSessions: sessions.length,
-      totalCost: 0,
+      totalCostUsd: 0,
       totalMessages: 0
     });
 
@@ -320,7 +320,7 @@ class ClaudeSessionManager {
 - **Created**: ${session.createdAt.toLocaleString()}
 - **Last Accessed**: ${session.lastAccessed.toLocaleString()}
 - **Total Messages**: ${session.messages.length}
-- **Total Cost**: $${(session.metadata?.totalCost || 0).toFixed(4)}
+- **Total Cost (USD)**: $${(session.metadata?.totalCostUsd || 0).toFixed(4)}
 
 ## Current Progress
 ${state?.currentProgress || 'No progress summary available'}

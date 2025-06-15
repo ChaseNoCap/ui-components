@@ -153,10 +153,10 @@ export const GET_SESSION_ANALYTICS = gql`
         complexityScore
       }
       costBreakdown {
-        totalCost
+        totalCostUsd
         costByModel {
           model
-          cost
+          costUsd
           tokenCount
         }
         projectedMonthlyCost
@@ -177,7 +177,7 @@ export const GET_BATCH_SESSION_ANALYTICS = gql`
         averageTokensPerMessage
       }
       costBreakdown {
-        totalCost
+        totalCostUsd
         projectedMonthlyCost
       }
     }

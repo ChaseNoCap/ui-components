@@ -38,7 +38,7 @@ interface ConsoleMessage {
   content: string;
   timestamp: Date;
   metadata?: {
-    cost?: number;
+    costUsd?: number;
     duration?: number;
     sessionId?: string;
     turns?: number;
@@ -54,7 +54,7 @@ interface Session {
   metadata?: {
     project?: string;
     task?: string;
-    totalCost?: number;
+    totalCostUsd?: number;
   };
 }
 
@@ -260,7 +260,7 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
       messages,
       metadata: {
         ...currentSession.metadata,
-        totalCost: messages.reduce((sum, msg) => sum + (msg.metadata?.cost || 0), 0)
+        totalCostUsd: messages.reduce((sum, msg) => sum + (msg.metadata?.costUsd || 0), 0)
       }
     };
 
@@ -733,9 +733,9 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       {format(session.lastAccessed, 'MMM d, h:mm a')}
                     </div>
-                    {session.metadata?.totalCost && (
+                    {session.metadata?.totalCostUsd && (
                       <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Cost: ${session.metadata.totalCost.toFixed(4)}
+                        Cost (USD): ${session.metadata.totalCostUsd.toFixed(4)}
                       </div>
                     )}
                   </div>
@@ -994,8 +994,8 @@ export const ClaudeConsoleGraphQL: React.FC = () => {
                 
                 {message.metadata && (
                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 text-xs opacity-75">
-                    {message.metadata.cost && (
-                      <span>Cost: ${message.metadata.cost.toFixed(4)} • </span>
+                    {message.metadata.costUsd && (
+                      <span>Cost (USD): ${message.metadata.costUsd.toFixed(4)} • </span>
                     )}
                     {message.metadata.duration && (
                       <span>Duration: {(message.metadata.duration / 1000).toFixed(2)}s • </span>

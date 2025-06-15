@@ -71,9 +71,9 @@ export const SessionAnalytics: React.FC<SessionAnalyticsProps> = ({ analyticsDat
         </h4>
         <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
           <div className="flex justify-between text-sm mb-1">
-            <span>Total Cost:</span>
+            <span>Total Cost (USD):</span>
             <span className="font-mono text-green-600 dark:text-green-400">
-              ${analytics.costBreakdown.totalCost.toFixed(4)}
+              ${analytics.costBreakdown.totalCostUsd.toFixed(4)}
             </span>
           </div>
           <div className="flex justify-between text-sm">

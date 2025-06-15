@@ -242,9 +242,9 @@ export const Observability: React.FC = () => {
               </p>
             </Card>
             <Card className="p-4">
-              <h3 className="text-sm text-gray-500">Total Cost</h3>
+              <h3 className="text-sm text-gray-500">Total Cost (USD)</h3>
               <p className="text-2xl font-bold">
-                ${(aiData?.sessionAnalytics?.totalCost || 0).toFixed(2)}
+                ${(aiData?.sessionAnalytics?.totalCostUsd || 0).toFixed(2)}
               </p>
             </Card>
           </div>

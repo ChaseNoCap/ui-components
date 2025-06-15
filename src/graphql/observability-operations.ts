@@ -25,7 +25,7 @@ export const SESSION_ANALYTICS_QUERY = gql`
     sessionAnalytics(startDate: $startDate, endDate: $endDate) {
       totalSessions
       totalTokensUsed
-      totalCost
+      totalCostUsd
       avgTokensPerSession
       avgSessionDuration
       sessionsByModel {
